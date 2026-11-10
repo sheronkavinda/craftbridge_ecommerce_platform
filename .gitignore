@@ -1,0 +1,47 @@
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Go Binaries & Build Artifacts
+bin/
+build/
+tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.txt
+go.work
+go.work.sum
+
+# Node / Angular Frontend
+node_modules/
+dist/
+.angular/
+out-tsc/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE & Editor Directories
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs & Local Storage
+logs/
+*.log
+uploads/
+
