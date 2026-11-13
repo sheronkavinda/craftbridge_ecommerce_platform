@@ -7,10 +7,14 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrNotFound = errors.New("record not found")
+var (
+	ErrNotFound           = errors.New("record not found")
+	ErrCategorySlugExists = errors.New("category slug already exists")
+)
 
 type ctxKeyRequestID struct{}
 
@@ -261,6 +265,10 @@ func (r *Repository) CreateCategory(ctx context.Context, categoryID, name, slug,
 	)
 	if err != nil {
 		log.Printf("[req_id=%s] repository.CreateCategory error (id=%s, slug=%s): %v", reqIDFromContext(ctx), categoryID, slug, err)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrCategorySlugExists
+		}
 		return nil, fmt.Errorf("failed to create category: %w", err)
 	}
 
@@ -284,6 +292,10 @@ func (r *Repository) UpdateCategory(ctx context.Context, categoryID, name, slug,
 		log.Printf("[req_id=%s] repository.UpdateCategory error (category_id=%s): %v", reqIDFromContext(ctx), categoryID, err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrCategorySlugExists
 		}
 		return nil, fmt.Errorf("failed to update category: %w", err)
 	}

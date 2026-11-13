@@ -703,7 +703,8 @@ const openAPISpecJSON = `{
         },
         "responses": {
           "201": { "description": "Category created and audit logged" },
-          "400": { "description": "Validation error" }
+          "400": { "description": "Validation error" },
+          "409": { "description": "A category with this slug already exists" }
         }
       }
     },
@@ -727,7 +728,8 @@ const openAPISpecJSON = `{
         },
         "responses": {
           "200": { "description": "Category updated" },
-          "404": { "description": "Category not found" }
+          "404": { "description": "Category not found" },
+          "409": { "description": "A category with this slug already exists" }
         }
       },
       "delete": {

@@ -227,6 +227,8 @@ func handleServiceError(c *gin.Context, reqID string, err error, fallbackMsg str
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, ErrCategorySlugExists):
+		c.JSON(http.StatusConflict, gin.H{"error": "A category with this slug already exists"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fallbackMsg})
 	}
