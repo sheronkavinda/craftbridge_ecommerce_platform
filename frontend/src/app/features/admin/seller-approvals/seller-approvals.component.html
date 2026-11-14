@@ -179,7 +179,7 @@
           aria-label="Seller applications"
         >
           <caption class="sr-only">
-            Seller onboarding applications with store name, applicant user ID, status, applied date, notes, and review actions
+            Seller onboarding applications with store name, applicant details, status, applied date, notes, and review actions
           </caption>
           <thead class="hidden border-b border-line bg-cream-50 md:table-header-group">
             <tr>
@@ -187,7 +187,7 @@
                 Store name
               </th>
               <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
-                Applicant ID
+                Applicant
               </th>
               <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
                 Status
@@ -216,11 +216,26 @@
                   </div>
                 </td>
 
-                <td class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
-                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Applicant ID</span>
-                  <code class="rounded bg-cream-100 px-2 py-0.5 text-xs font-medium text-navy-800">
-                    {{ app.user_id }}
-                  </code>
+                <td class="flex items-start justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Applicant</span>
+                  @if (app.user_name?.trim()) {
+                    <div class="text-right md:text-left">
+                      <div class="font-medium text-ink">{{ app.user_name }}</div>
+                      @if (app.user_email?.trim()) {
+                        <div class="text-xs text-ink-secondary">{{ app.user_email }}</div>
+                      }
+                      <div class="font-mono text-[11px] text-ink-secondary">{{ app.user_id }}</div>
+                    </div>
+                  } @else {
+                    <div class="text-right md:text-left">
+                      <code class="rounded bg-cream-100 px-2 py-0.5 text-xs font-medium text-navy-800">
+                        {{ app.user_id }}
+                      </code>
+                      @if (app.user_email?.trim()) {
+                        <div class="mt-0.5 text-xs text-ink-secondary">{{ app.user_email }}</div>
+                      }
+                    </div>
+                  }
                 </td>
 
                 <td class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
@@ -310,10 +325,13 @@
         (click)="$event.stopPropagation()"
       >
         <h2 id="approve-dialog-title" class="font-serif-display text-xl font-bold text-ink">
-          Approve {{ target.store_name }}?
+          Approve {{ target.store_name }}{{ target.user_name?.trim() ? ' (' + target.user_name + ')' : '' }}?
         </h2>
         <p id="approve-dialog-desc" class="mt-2 text-sm text-ink-secondary">
           Approving this application will activate the storefront for applicant
+          @if (target.user_name?.trim()) {
+            <strong class="font-semibold text-ink">{{ target.user_name }}</strong>
+          }
           <code class="rounded bg-cream-100 px-1.5 py-0.5 text-xs font-medium text-navy-800">{{ target.user_id }}</code>
           and record the decision in the audit trail.
         </p>
@@ -379,7 +397,7 @@
         (click)="$event.stopPropagation()"
       >
         <h2 id="reject-dialog-title" class="font-serif-display text-xl font-bold text-ink">
-          Reject {{ target.store_name }}?
+          Reject {{ target.store_name }}{{ target.user_name?.trim() ? ' (' + target.user_name + ')' : '' }}?
         </h2>
         <p id="reject-dialog-desc" class="mt-2 text-sm text-ink-secondary">
           Please provide a reason for rejecting this seller application. This note is stored on the

@@ -21,6 +21,8 @@ export interface UpdateUserStatusPayload {
 export interface SellerApplication {
   id: string;
   user_id: string;
+  user_name?: string;
+  user_email?: string;
   store_name: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | string;
   notes: string;

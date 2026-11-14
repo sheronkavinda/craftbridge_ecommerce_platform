@@ -13,6 +13,8 @@ describe('SellerApprovalsComponent', () => {
     {
       id: 'seller-002',
       user_id: 'seller-u2',
+      user_name: 'Amali Weaves',
+      user_email: 'amali@craftbridge.test',
       store_name: 'Amali Handlooms',
       status: 'PENDING',
       notes: 'Traditional cotton weaves',
@@ -21,6 +23,8 @@ describe('SellerApprovalsComponent', () => {
     {
       id: 'seller-001',
       user_id: 'seller-u1',
+      user_name: 'Sunil Craftsman',
+      user_email: 'sunil@craftbridge.test',
       store_name: 'Sunil Wood Crafts',
       status: 'APPROVED',
       notes: 'Verified artisan registration',
@@ -58,6 +62,8 @@ describe('SellerApprovalsComponent', () => {
     const rows = compiled.querySelectorAll('tbody tr');
     expect(rows.length).toBe(1);
     expect(rows[0].textContent).toContain('Amali Handlooms');
+    expect(rows[0].textContent).toContain('Amali Weaves');
+    expect(rows[0].textContent).toContain('amali@craftbridge.test');
     expect(component.counts()).toEqual({
       PENDING: 1,
       APPROVED: 1,
@@ -79,7 +85,7 @@ describe('SellerApprovalsComponent', () => {
     fixture.detectChanges();
 
     const dialog = (fixture.nativeElement as HTMLElement).querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain('Reject Amali Handlooms?');
+    expect(dialog?.textContent).toContain('Reject Amali Handlooms (Amali Weaves)?');
     expect(component.rejectForm.invalid).toBeTrue();
 
     component.rejectForm.controls.notes.setValue('Incomplete portfolio photos');
