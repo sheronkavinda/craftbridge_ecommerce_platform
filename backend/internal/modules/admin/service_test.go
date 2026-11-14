@@ -9,11 +9,13 @@ import (
 	"time"
 
 	"craftbridge/backend/internal/modules/audit"
+	"craftbridge/backend/internal/modules/report"
 )
 
 type fakeAuditRepo struct {
 	mu      sync.Mutex
 	entries []audit.AuditLog
+	listErr error
 }
 
 func (f *fakeAuditRepo) Create(_ context.Context, input audit.CreateAuditLogInput) (*audit.AuditLog, error) {
@@ -37,6 +39,9 @@ func (f *fakeAuditRepo) Create(_ context.Context, input audit.CreateAuditLogInpu
 func (f *fakeAuditRepo) List(_ context.Context, _ audit.ListAuditLogsFilter) ([]audit.AuditLog, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	out := make([]audit.AuditLog, len(f.entries))
 	copy(out, f.entries)
 	return out, nil
@@ -50,9 +55,25 @@ func (f *fakeAuditRepo) recorded() []audit.AuditLog {
 	return out
 }
 
+type fakeRevenueProvider struct {
+	summary *report.RevenueSummary
+	err     error
+}
+
+func (f *fakeRevenueProvider) GetRevenueSummary(_ context.Context, _, _ string) (*report.RevenueSummary, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.summary != nil {
+		return f.summary, nil
+	}
+	return &report.RevenueSummary{}, nil
+}
+
 type fakeAdminRepo struct {
 	lastUserRole   string
 	lastUserStatus string
+	lastUserSearch string
 	lastLimit      int
 	lastOffset     int
 
@@ -70,8 +91,9 @@ type fakeAdminRepo struct {
 	lastCategoryDescription string
 	lastCategoryIsActive    bool
 
-	listUsersFn              func(ctx context.Context, role, status string, limit, offset int) ([]UserSummary, error)
+	listUsersFn              func(ctx context.Context, role, status, search string, limit, offset int) ([]UserSummary, error)
 	updateUserStatusFn       func(ctx context.Context, userID, status string) (*UserSummary, error)
+	updateUserRoleFn         func(ctx context.Context, userID, role string) (*UserSummary, error)
 	listSellerApplicationsFn func(ctx context.Context, status string, limit, offset int) ([]SellerApplication, error)
 	updateSellerStatusFn     func(ctx context.Context, sellerID, status, notes string) (*SellerApplication, error)
 	listRefundsFn            func(ctx context.Context, status string, limit, offset int) ([]RefundRecord, error)
@@ -80,15 +102,17 @@ type fakeAdminRepo struct {
 	createCategoryFn         func(ctx context.Context, categoryID, name, slug, description string, isActive bool) (*Category, error)
 	updateCategoryFn         func(ctx context.Context, categoryID, name, slug, description string, isActive bool) (*Category, error)
 	deleteCategoryFn         func(ctx context.Context, categoryID string) error
+	getDashboardCountsFn     func(ctx context.Context) (*DashboardCounts, error)
 }
 
-func (r *fakeAdminRepo) ListUsers(ctx context.Context, role, status string, limit, offset int) ([]UserSummary, error) {
+func (r *fakeAdminRepo) ListUsers(ctx context.Context, role, status, search string, limit, offset int) ([]UserSummary, error) {
 	r.lastUserRole = role
 	r.lastUserStatus = status
+	r.lastUserSearch = search
 	r.lastLimit = limit
 	r.lastOffset = offset
 	if r.listUsersFn != nil {
-		return r.listUsersFn(ctx, role, status, limit, offset)
+		return r.listUsersFn(ctx, role, status, search, limit, offset)
 	}
 	return []UserSummary{}, nil
 }
@@ -99,6 +123,14 @@ func (r *fakeAdminRepo) UpdateUserStatus(ctx context.Context, userID, status str
 		return r.updateUserStatusFn(ctx, userID, status)
 	}
 	return &UserSummary{ID: userID, Name: "Test User", Email: "user@test.local", Role: "BUYER", Status: status}, nil
+}
+
+func (r *fakeAdminRepo) UpdateUserRole(ctx context.Context, userID, role string) (*UserSummary, error) {
+	r.lastUserRole = role
+	if r.updateUserRoleFn != nil {
+		return r.updateUserRoleFn(ctx, userID, role)
+	}
+	return &UserSummary{ID: userID, Name: "Test User", Email: "user@test.local", Role: role, Status: "ACTIVE"}, nil
 }
 
 func (r *fakeAdminRepo) ListSellerApplications(ctx context.Context, status string, limit, offset int) ([]SellerApplication, error) {
@@ -180,6 +212,13 @@ func (r *fakeAdminRepo) DeleteCategory(ctx context.Context, categoryID string) e
 	return nil
 }
 
+func (r *fakeAdminRepo) GetDashboardCounts(ctx context.Context) (*DashboardCounts, error) {
+	if r.getDashboardCountsFn != nil {
+		return r.getDashboardCountsFn(ctx)
+	}
+	return &DashboardCounts{}, nil
+}
+
 func TestService_ListUsers_NormalizesFiltersAndBounds(t *testing.T) {
 	t.Parallel()
 
@@ -187,10 +226,12 @@ func TestService_ListUsers_NormalizesFiltersAndBounds(t *testing.T) {
 		name       string
 		inRole     string
 		inStatus   string
+		inSearch   string
 		inLimit    int
 		inOffset   int
 		wantRole   string
 		wantStatus string
+		wantSearch string
 		wantLimit  int
 		wantOffset int
 	}{
@@ -198,10 +239,12 @@ func TestService_ListUsers_NormalizesFiltersAndBounds(t *testing.T) {
 			name:       "normalizes lowercase role and status and keeps valid pagination",
 			inRole:     "  buyer ",
 			inStatus:   " active ",
+			inSearch:   "  jane@craftbridge.test ",
 			inLimit:    25,
 			inOffset:   10,
 			wantRole:   "BUYER",
 			wantStatus: "ACTIVE",
+			wantSearch: "jane@craftbridge.test",
 			wantLimit:  25,
 			wantOffset: 10,
 		},
@@ -209,10 +252,12 @@ func TestService_ListUsers_NormalizesFiltersAndBounds(t *testing.T) {
 			name:       "clamps zero limit to 50 and negative offset to 0",
 			inRole:     "seller",
 			inStatus:   "suspended",
+			inSearch:   "",
 			inLimit:    0,
 			inOffset:   -5,
 			wantRole:   "SELLER",
 			wantStatus: "SUSPENDED",
+			wantSearch: "",
 			wantLimit:  50,
 			wantOffset: 0,
 		},
@@ -220,11 +265,26 @@ func TestService_ListUsers_NormalizesFiltersAndBounds(t *testing.T) {
 			name:       "clamps excessive limit above 200 to 50",
 			inRole:     "",
 			inStatus:   "",
+			inSearch:   "",
 			inLimit:    500,
 			inOffset:   0,
 			wantRole:   "",
 			wantStatus: "",
+			wantSearch: "",
 			wantLimit:  50,
+			wantOffset: 0,
+		},
+		{
+			name:       "escapes LIKE wildcards %, _, and \\ in q and truncates to 100 runes before escaping",
+			inRole:     "buyer",
+			inStatus:   "active",
+			inSearch:   `  100% _\admin  `,
+			inLimit:    20,
+			inOffset:   0,
+			wantRole:   "BUYER",
+			wantStatus: "ACTIVE",
+			wantSearch: `100\% \_\\admin`,
+			wantLimit:  20,
 			wantOffset: 0,
 		},
 	}
@@ -235,7 +295,7 @@ func TestService_ListUsers_NormalizesFiltersAndBounds(t *testing.T) {
 			repo := &fakeAdminRepo{}
 			svc := NewService(repo, nil)
 
-			_, err := svc.ListUsers(context.Background(), tc.inRole, tc.inStatus, tc.inLimit, tc.inOffset)
+			_, err := svc.ListUsers(context.Background(), tc.inRole, tc.inStatus, tc.inSearch, tc.inLimit, tc.inOffset)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -245,6 +305,9 @@ func TestService_ListUsers_NormalizesFiltersAndBounds(t *testing.T) {
 			if repo.lastUserStatus != tc.wantStatus {
 				t.Errorf("got status %q, want %q", repo.lastUserStatus, tc.wantStatus)
 			}
+			if repo.lastUserSearch != tc.wantSearch {
+				t.Errorf("got search %q, want %q", repo.lastUserSearch, tc.wantSearch)
+			}
 			if repo.lastLimit != tc.wantLimit {
 				t.Errorf("got limit %d, want %d", repo.lastLimit, tc.wantLimit)
 			}
@@ -253,6 +316,21 @@ func TestService_ListUsers_NormalizesFiltersAndBounds(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("truncates q to 100 runes before escaping wildcards", func(t *testing.T) {
+		t.Parallel()
+		repo := &fakeAdminRepo{}
+		svc := NewService(repo, nil)
+
+		longSearch := strings.Repeat("a", 150)
+		_, err := svc.ListUsers(context.Background(), "", "", longSearch, 50, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len([]rune(repo.lastUserSearch)) != 100 {
+			t.Errorf("got search length %d runes, want 100", len([]rune(repo.lastUserSearch)))
+		}
+	})
 }
 
 func TestService_UpdateUserStatus(t *testing.T) {
@@ -554,6 +632,196 @@ func TestService_CategoryCreateAndUpdate(t *testing.T) {
 		logs := auditRepo.recorded()
 		if len(logs) != 2 || logs[0].Outcome != "FAILURE" || logs[1].Outcome != "FAILURE" {
 			t.Errorf("expected 2 FAILURE audit entries, got %+v", logs)
+		}
+	})
+}
+
+func TestService_UpdateUserRole(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects invalid role with ErrInvalidInput", func(t *testing.T) {
+		t.Parallel()
+		repo := &fakeAdminRepo{}
+		svc := NewService(repo, nil)
+
+		_, err := svc.UpdateUserRole(context.Background(), "admin-001", "Admin", "req-role-1", "buyer-001", UpdateUserRoleInput{
+			Role: "SUPERUSER",
+		})
+		if !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("got err %v, want ErrInvalidInput", err)
+		}
+	})
+
+	t.Run("prevents self-role change with ErrForbiddenIDOR and records FAILURE audit", func(t *testing.T) {
+		t.Parallel()
+		repo := &fakeAdminRepo{}
+		auditRepo := &fakeAuditRepo{}
+		svc := NewService(repo, audit.NewService(auditRepo))
+
+		_, err := svc.UpdateUserRole(context.Background(), "admin-001", "Admin", "req-role-2", "ADMIN-001", UpdateUserRoleInput{
+			Role: "buyer",
+		})
+		if !errors.Is(err, ErrForbiddenIDOR) {
+			t.Fatalf("got err %v, want ErrForbiddenIDOR", err)
+		}
+
+		logs := auditRepo.recorded()
+		if len(logs) != 1 || logs[0].Outcome != "FAILURE" || logs[0].Action != "USER_ROLE_UPDATE" {
+			t.Fatalf("expected 1 FAILURE USER_ROLE_UPDATE audit log, got %+v", logs)
+		}
+	})
+
+	t.Run("propagates ErrLastAdmin when demoting the last remaining administrator and records FAILURE audit", func(t *testing.T) {
+		t.Parallel()
+		repo := &fakeAdminRepo{
+			updateUserRoleFn: func(_ context.Context, _, _ string) (*UserSummary, error) {
+				return nil, ErrLastAdmin
+			},
+		}
+		auditRepo := &fakeAuditRepo{}
+		svc := NewService(repo, audit.NewService(auditRepo))
+
+		_, err := svc.UpdateUserRole(context.Background(), "admin-001", "Admin", "req-role-3", "admin-002", UpdateUserRoleInput{
+			Role: "buyer",
+		})
+		if !errors.Is(err, ErrLastAdmin) {
+			t.Fatalf("got err %v, want ErrLastAdmin", err)
+		}
+
+		logs := auditRepo.recorded()
+		if len(logs) != 1 || logs[0].Outcome != "FAILURE" || logs[0].Action != "USER_ROLE_UPDATE" || logs[0].Target != "user:admin-002" {
+			t.Fatalf("expected 1 FAILURE USER_ROLE_UPDATE audit log, got %+v", logs)
+		}
+	})
+
+	t.Run("normalizes lowercase role and writes SUCCESS USER_ROLE_UPDATE audit entry", func(t *testing.T) {
+		t.Parallel()
+		repo := &fakeAdminRepo{}
+		auditRepo := &fakeAuditRepo{}
+		svc := NewService(repo, audit.NewService(auditRepo))
+
+		updated, err := svc.UpdateUserRole(context.Background(), "admin-001", "System Admin", "req-role-4", "buyer-001", UpdateUserRoleInput{
+			Role: " seller ",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if updated.Role != "SELLER" || repo.lastUserRole != "SELLER" {
+			t.Errorf("got role %q, want SELLER", updated.Role)
+		}
+
+		logs := auditRepo.recorded()
+		if len(logs) != 1 || logs[0].Outcome != "SUCCESS" || logs[0].Action != "USER_ROLE_UPDATE" || logs[0].Details != "role set to SELLER" {
+			t.Errorf("unexpected audit entry: %+v", logs)
+		}
+	})
+}
+
+func TestService_GetDashboardSummary(t *testing.T) {
+	t.Parallel()
+
+	t.Run("assembles dashboard pieces from repository, revenue provider, and audit service", func(t *testing.T) {
+		t.Parallel()
+		repo := &fakeAdminRepo{
+			getDashboardCountsFn: func(_ context.Context) (*DashboardCounts, error) {
+				return &DashboardCounts{
+					Users: DashboardUserStats{
+						Total:     12,
+						Active:    10,
+						Suspended: 2,
+						ByRole: DashboardUserRoleCounts{
+							Buyer:  8,
+							Seller: 3,
+							Admin:  1,
+						},
+					},
+					Sellers: DashboardSellerStats{
+						Pending:   2,
+						Approved:  5,
+						Rejected:  1,
+						Suspended: 0,
+					},
+					Refunds: DashboardRefundStats{
+						PendingCount:  2,
+						PendingAmount: 6350.50,
+					},
+					Categories: DashboardCategoryStats{
+						Total:  6,
+						Active: 5,
+					},
+				}, nil
+			},
+		}
+		auditRepo := &fakeAuditRepo{
+			entries: []audit.AuditLog{
+				{ID: 10, ActorID: "admin-001", ActorName: "System Admin", Action: "USER_ROLE_UPDATE", Target: "user:usr-1", Outcome: "SUCCESS"},
+				{ID: 9, ActorID: "admin-001", ActorName: "System Admin", Action: "CATEGORY_CREATE", Target: "category:cat-1", Outcome: "SUCCESS"},
+			},
+		}
+		revProvider := &fakeRevenueProvider{
+			summary: &report.RevenueSummary{
+				GrossVerifiedPayments: 45000.00,
+				TotalRefunds:          2500.00,
+				NetRevenue:            42500.00,
+				VerifiedPaymentCount:  18,
+				RefundCount:           2,
+			},
+		}
+
+		svc := NewService(repo, audit.NewService(auditRepo), revProvider)
+		summary, err := svc.GetDashboardSummary(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if summary.Users.Total != 12 || summary.Users.ByRole.Buyer != 8 || summary.Users.ByRole.Seller != 3 || summary.Users.ByRole.Admin != 1 {
+			t.Errorf("unexpected user stats: %+v", summary.Users)
+		}
+		if summary.Sellers.Pending != 2 || summary.Sellers.Approved != 5 {
+			t.Errorf("unexpected seller stats: %+v", summary.Sellers)
+		}
+		if summary.Refunds.PendingCount != 2 || summary.Refunds.PendingAmount != 6350.50 {
+			t.Errorf("unexpected refund stats: %+v", summary.Refunds)
+		}
+		if summary.Categories.Total != 6 || summary.Categories.Active != 5 {
+			t.Errorf("unexpected category stats: %+v", summary.Categories)
+		}
+		if summary.Revenue.NetRevenue != 42500.00 || summary.Revenue.GrossVerifiedPayments != 45000.00 {
+			t.Errorf("unexpected revenue summary: %+v", summary.Revenue)
+		}
+		if len(summary.RecentActivity) != 2 || summary.RecentActivity[0].ID != 10 {
+			t.Errorf("unexpected recent activity: %+v", summary.RecentActivity)
+		}
+		if summary.GeneratedAt.IsZero() {
+			t.Error("expected non-zero generated_at")
+		}
+	})
+
+	t.Run("returns error when any dashboard dependency fails", func(t *testing.T) {
+		t.Parallel()
+
+		// 1. Repository aggregate query fails
+		repoErr := errors.New("db aggregate failure")
+		svc1 := NewService(&fakeAdminRepo{
+			getDashboardCountsFn: func(_ context.Context) (*DashboardCounts, error) {
+				return nil, repoErr
+			},
+		}, nil, &fakeRevenueProvider{})
+		if _, err := svc1.GetDashboardSummary(context.Background()); !errors.Is(err, repoErr) {
+			t.Errorf("got err %v, want %v", err, repoErr)
+		}
+
+		// 2. Revenue provider fails
+		revErr := errors.New("revenue query failure")
+		svc2 := NewService(&fakeAdminRepo{}, nil, &fakeRevenueProvider{err: revErr})
+		if _, err := svc2.GetDashboardSummary(context.Background()); !errors.Is(err, revErr) {
+			t.Errorf("got err %v, want %v", err, revErr)
+		}
+
+		// 3. Audit service fails
+		auditErr := errors.New("audit query failure")
+		svc3 := NewService(&fakeAdminRepo{}, audit.NewService(&fakeAuditRepo{listErr: auditErr}), &fakeRevenueProvider{})
+		if _, err := svc3.GetDashboardSummary(context.Background()); !errors.Is(err, auditErr) {
+			t.Errorf("got err %v, want %v", err, auditErr)
 		}
 	})
 }

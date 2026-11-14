@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
+
+	"craftbridge/backend/internal/modules/report"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -15,6 +18,7 @@ var (
 	ErrNotFound             = errors.New("record not found")
 	ErrCategorySlugExists   = errors.New("category slug already exists")
 	ErrRefundAlreadyDecided = errors.New("refund has already been decided")
+	ErrLastAdmin            = errors.New("cannot remove the last administrator")
 )
 
 type ctxKeyRequestID struct{}
@@ -33,26 +37,36 @@ func reqIDFromContext(ctx context.Context) string {
 
 // Repository executes 100% parameterized SQL queries using pgx to prevent SQL injection.
 type Repository struct {
-	db *pgxpool.Pool
+	db            *pgxpool.Pool
+	reportService *report.Service
 }
 
 // NewRepository creates a new admin repository backed by a pgx connection pool.
 func NewRepository(db *pgxpool.Pool) *Repository {
-	return &Repository{db: db}
+	return &Repository{
+		db:            db,
+		reportService: report.NewService(report.NewRepository(db)),
+	}
 }
 
-// ListUsers retrieves platform users with parameterized role and status filters.
-func (r *Repository) ListUsers(ctx context.Context, role, status string, limit, offset int) ([]UserSummary, error) {
+// GetRevenueSummary delegates to the report module service so revenue SQL is never duplicated.
+func (r *Repository) GetRevenueSummary(ctx context.Context, startStr, endStr string) (*report.RevenueSummary, error) {
+	return r.reportService.GetRevenueSummary(ctx, startStr, endStr)
+}
+
+// ListUsers retrieves platform users with parameterized role, status, and case-insensitive search filters.
+func (r *Repository) ListUsers(ctx context.Context, role, status, search string, limit, offset int) ([]UserSummary, error) {
 	const query = `
 		SELECT id::text, name, email, role, status, created_at
 		FROM users
 		WHERE ($1 = '' OR role = $1)
 		  AND ($2 = '' OR status = $2)
+		  AND ($3 = '' OR name ILIKE '%' || $3 || '%' ESCAPE '\' OR email ILIKE '%' || $3 || '%' ESCAPE '\')
 		ORDER BY created_at DESC
-		LIMIT $3 OFFSET $4
+		LIMIT $4 OFFSET $5
 	`
 
-	rows, err := r.db.Query(ctx, query, role, status, limit, offset)
+	rows, err := r.db.Query(ctx, query, role, status, search, limit, offset)
 	if err != nil {
 		log.Printf("[req_id=%s] repository.ListUsers query error: %v", reqIDFromContext(ctx), err)
 		return nil, fmt.Errorf("failed to list users: %w", err)
@@ -96,6 +110,48 @@ func (r *Repository) UpdateUserStatus(ctx context.Context, userID, status string
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to update user status: %w", err)
+	}
+
+	return &u, nil
+}
+
+// UpdateUserRole updates a user's role while atomically guarding against removing the last remaining ADMIN.
+func (r *Repository) UpdateUserRole(ctx context.Context, userID, role string) (*UserSummary, error) {
+	const query = `
+		UPDATE users
+		SET role = $2, updated_at = NOW()
+		WHERE id::text = $1
+		  AND (
+		    $2 = 'ADMIN'
+		    OR UPPER(role) <> 'ADMIN'
+		    OR (SELECT COUNT(*) FROM users WHERE UPPER(role) = 'ADMIN') > 1
+		  )
+		RETURNING id::text, name, email, role, status, created_at
+	`
+
+	var u UserSummary
+	err := r.db.QueryRow(ctx, query, userID, role).Scan(
+		&u.ID, &u.Name, &u.Email, &u.Role, &u.Status, &u.CreatedAt,
+	)
+	if err != nil {
+		log.Printf("[req_id=%s] repository.UpdateUserRole error (user_id=%s): %v", reqIDFromContext(ctx), userID, err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			var currentRole string
+			var adminCount int64
+			checkErr := r.db.QueryRow(
+				ctx,
+				`SELECT UPPER(role), (SELECT COUNT(*)::bigint FROM users WHERE UPPER(role) = 'ADMIN') FROM users WHERE id::text = $1`,
+				userID,
+			).Scan(&currentRole, &adminCount)
+			if errors.Is(checkErr, pgx.ErrNoRows) {
+				return nil, ErrNotFound
+			}
+			if checkErr == nil && strings.EqualFold(currentRole, "ADMIN") && !strings.EqualFold(role, "ADMIN") && adminCount <= 1 {
+				return nil, ErrLastAdmin
+			}
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to update user role: %w", err)
 	}
 
 	return &u, nil
@@ -341,4 +397,80 @@ func (r *Repository) DeleteCategory(ctx context.Context, categoryID string) erro
 		return ErrNotFound
 	}
 	return nil
+}
+
+// GetDashboardCounts executes aggregate COUNT/SUM FILTER queries for users, sellers, refunds, and categories.
+func (r *Repository) GetDashboardCounts(ctx context.Context) (*DashboardCounts, error) {
+	const usersQuery = `
+		SELECT
+			COUNT(*)::bigint AS total,
+			COUNT(*) FILTER (WHERE UPPER(status) = 'ACTIVE')::bigint AS active,
+			COUNT(*) FILTER (WHERE UPPER(status) = 'SUSPENDED')::bigint AS suspended,
+			COUNT(*) FILTER (WHERE UPPER(role) = 'BUYER')::bigint AS buyer_count,
+			COUNT(*) FILTER (WHERE UPPER(role) = 'SELLER')::bigint AS seller_count,
+			COUNT(*) FILTER (WHERE UPPER(role) = 'ADMIN')::bigint AS admin_count
+		FROM users
+	`
+	const sellersQuery = `
+		SELECT
+			COUNT(*) FILTER (WHERE UPPER(status) = 'PENDING')::bigint AS pending,
+			COUNT(*) FILTER (WHERE UPPER(status) = 'APPROVED')::bigint AS approved,
+			COUNT(*) FILTER (WHERE UPPER(status) = 'REJECTED')::bigint AS rejected,
+			COUNT(*) FILTER (WHERE UPPER(status) = 'SUSPENDED')::bigint AS suspended
+		FROM sellers
+	`
+	const refundsQuery = `
+		SELECT
+			COUNT(*) FILTER (WHERE UPPER(status) = 'PENDING')::bigint AS pending_count,
+			COALESCE(SUM(amount) FILTER (WHERE UPPER(status) = 'PENDING'), 0)::float8 AS pending_amount
+		FROM refunds
+	`
+	const categoriesQuery = `
+		SELECT
+			COUNT(*)::bigint AS total,
+			COUNT(*) FILTER (WHERE is_active = TRUE)::bigint AS active
+		FROM categories
+	`
+
+	var counts DashboardCounts
+
+	if err := r.db.QueryRow(ctx, usersQuery).Scan(
+		&counts.Users.Total,
+		&counts.Users.Active,
+		&counts.Users.Suspended,
+		&counts.Users.ByRole.Buyer,
+		&counts.Users.ByRole.Seller,
+		&counts.Users.ByRole.Admin,
+	); err != nil {
+		log.Printf("[req_id=%s] repository.GetDashboardCounts users query error: %v", reqIDFromContext(ctx), err)
+		return nil, fmt.Errorf("failed to aggregate user stats: %w", err)
+	}
+
+	if err := r.db.QueryRow(ctx, sellersQuery).Scan(
+		&counts.Sellers.Pending,
+		&counts.Sellers.Approved,
+		&counts.Sellers.Rejected,
+		&counts.Sellers.Suspended,
+	); err != nil {
+		log.Printf("[req_id=%s] repository.GetDashboardCounts sellers query error: %v", reqIDFromContext(ctx), err)
+		return nil, fmt.Errorf("failed to aggregate seller stats: %w", err)
+	}
+
+	if err := r.db.QueryRow(ctx, refundsQuery).Scan(
+		&counts.Refunds.PendingCount,
+		&counts.Refunds.PendingAmount,
+	); err != nil {
+		log.Printf("[req_id=%s] repository.GetDashboardCounts refunds query error: %v", reqIDFromContext(ctx), err)
+		return nil, fmt.Errorf("failed to aggregate refund stats: %w", err)
+	}
+
+	if err := r.db.QueryRow(ctx, categoriesQuery).Scan(
+		&counts.Categories.Total,
+		&counts.Categories.Active,
+	); err != nil {
+		log.Printf("[req_id=%s] repository.GetDashboardCounts categories query error: %v", reqIDFromContext(ctx), err)
+		return nil, fmt.Errorf("failed to aggregate category stats: %w", err)
+	}
+
+	return &counts, nil
 }

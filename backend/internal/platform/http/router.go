@@ -403,6 +403,63 @@ const openAPISpecJSON = `{
           "reason": { "type": "string", "example": "Policy violation review" }
         }
       },
+      "UpdateUserRoleInput": {
+        "type": "object",
+        "required": ["role"],
+        "properties": {
+          "role": { "type": "string", "enum": ["BUYER", "SELLER", "ADMIN"], "example": "SELLER" }
+        }
+      },
+      "DashboardSummary": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "object",
+            "properties": {
+              "total": { "type": "integer", "format": "int64", "example": 12 },
+              "active": { "type": "integer", "format": "int64", "example": 10 },
+              "suspended": { "type": "integer", "format": "int64", "example": 2 },
+              "by_role": {
+                "type": "object",
+                "properties": {
+                  "BUYER": { "type": "integer", "format": "int64", "example": 8 },
+                  "SELLER": { "type": "integer", "format": "int64", "example": 3 },
+                  "ADMIN": { "type": "integer", "format": "int64", "example": 1 }
+                }
+              }
+            }
+          },
+          "sellers": {
+            "type": "object",
+            "properties": {
+              "pending": { "type": "integer", "format": "int64", "example": 2 },
+              "approved": { "type": "integer", "format": "int64", "example": 5 },
+              "rejected": { "type": "integer", "format": "int64", "example": 1 },
+              "suspended": { "type": "integer", "format": "int64", "example": 0 }
+            }
+          },
+          "refunds": {
+            "type": "object",
+            "properties": {
+              "pending_count": { "type": "integer", "format": "int64", "example": 2 },
+              "pending_amount": { "type": "number", "format": "double", "example": 6350.00 }
+            }
+          },
+          "categories": {
+            "type": "object",
+            "properties": {
+              "total": { "type": "integer", "format": "int64", "example": 6 },
+              "active": { "type": "integer", "format": "int64", "example": 5 }
+            }
+          },
+          "revenue": { "$ref": "#/components/schemas/RevenueSummary" },
+          "recent_activity": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AuditLog" }
+          },
+          "generated_at": { "type": "string", "format": "date-time" }
+        }
+      },
       "SellerApplication": {
         "type": "object",
         "properties": {
@@ -527,6 +584,22 @@ const openAPISpecJSON = `{
         }
       }
     },
+    "/api/v1/admin/dashboard": {
+      "get": {
+        "tags": ["Admin - Users"],
+        "summary": "Aggregated administrative dashboard summary",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" }
+        ],
+        "responses": {
+          "200": { "description": "Aggregated counts, revenue summary, and latest 5 audit log entries" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (admin role required)" }
+        }
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "tags": ["Admin - Users"],
@@ -535,6 +608,7 @@ const openAPISpecJSON = `{
           { "$ref": "#/components/parameters/XActorRole" },
           { "$ref": "#/components/parameters/XActorID" },
           { "$ref": "#/components/parameters/XActorName" },
+          { "name": "q", "in": "query", "schema": { "type": "string", "maxLength": 100 }, "description": "Case-insensitive search on user name or email" },
           { "name": "role", "in": "query", "schema": { "type": "string" }, "description": "Filter by user role (e.g. buyer, seller, admin)" },
           { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "BANNED"] }, "description": "Filter by account status" },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
@@ -591,6 +665,58 @@ const openAPISpecJSON = `{
         },
         "responses": {
           "200": { "description": "Updated user record" }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/roles": {
+      "patch": {
+        "tags": ["Admin - Users"],
+        "summary": "Update user role (BUYER, SELLER, ADMIN)",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Target user ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateUserRoleInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated user record" },
+          "400": { "description": "Invalid role input" },
+          "403": { "description": "Forbidden / Self-role modification prevented" },
+          "404": { "description": "User not found" },
+          "409": { "description": "cannot remove the last administrator" }
+        }
+      },
+      "put": {
+        "tags": ["Admin - Users"],
+        "summary": "Update user role (PUT alias)",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Target user ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateUserRoleInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated user record" },
+          "400": { "description": "Invalid role input" },
+          "403": { "description": "Forbidden / Self-role modification prevented" },
+          "404": { "description": "User not found" },
+          "409": { "description": "cannot remove the last administrator" }
         }
       }
     },

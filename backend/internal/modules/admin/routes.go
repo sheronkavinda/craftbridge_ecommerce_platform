@@ -11,9 +11,13 @@ func RegisterRoutes(rg *gin.RouterGroup, handler *Handler) {
 	adminGroup := rg.Group("/admin")
 	adminGroup.Use(platformhttp.RequireAdminRole())
 	{
+		adminGroup.GET("/dashboard", handler.GetDashboardSummary)
+
 		adminGroup.GET("/users", handler.ListUsers)
 		adminGroup.PATCH("/users/:id/status", handler.UpdateUserStatus)
 		adminGroup.PUT("/users/:id/status", handler.UpdateUserStatus)
+		adminGroup.PATCH("/users/:id/roles", handler.UpdateUserRole)
+		adminGroup.PUT("/users/:id/roles", handler.UpdateUserRole)
 
 		adminGroup.GET("/sellers", handler.ListSellerApplications)
 		adminGroup.GET("/sellers/applications", handler.ListSellerApplications)

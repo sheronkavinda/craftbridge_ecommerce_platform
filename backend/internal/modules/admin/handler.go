@@ -22,16 +22,31 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+// GetDashboardSummary handles GET /api/v1/admin/dashboard.
+func (h *Handler) GetDashboardSummary(c *gin.Context) {
+	_, _, reqID := extractVerifiedActor(c)
+	ctx := WithRequestID(c.Request.Context(), reqID)
+	summary, err := h.service.GetDashboardSummary(ctx)
+	if err != nil {
+		log.Printf("[req_id=%s] handler.GetDashboardSummary error: %v", reqID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard summary"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": summary})
+}
+
 // ListUsers handles GET /api/v1/admin/users.
 func (h *Handler) ListUsers(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	role := c.Query("role")
 	status := c.Query("status")
+	q := c.Query("q")
 
 	_, _, reqID := extractVerifiedActor(c)
 	ctx := WithRequestID(c.Request.Context(), reqID)
-	users, err := h.service.ListUsers(ctx, role, status, limit, offset)
+	users, err := h.service.ListUsers(ctx, role, status, q, limit, offset)
 	if err != nil {
 		log.Printf("[req_id=%s] handler.ListUsers error: %v", reqID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list users"})
@@ -54,6 +69,26 @@ func (h *Handler) UpdateUserStatus(c *gin.Context) {
 	user, err := h.service.UpdateUserStatus(c.Request.Context(), actorID, actorName, reqID, userID, input)
 	if err != nil {
 		handleServiceError(c, reqID, err, "failed to update user status")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": user})
+}
+
+// UpdateUserRole handles PATCH/PUT /api/v1/admin/users/:id/roles.
+// NOTE: Per the project plan, roles are owned by the identity module and this should call that module's service once it exists.
+func (h *Handler) UpdateUserRole(c *gin.Context) {
+	userID := strings.TrimSpace(c.Param("id"))
+	var input UpdateUserRoleInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+		return
+	}
+
+	actorID, actorName, reqID := extractVerifiedActor(c)
+	user, err := h.service.UpdateUserRole(c.Request.Context(), actorID, actorName, reqID, userID, input)
+	if err != nil {
+		handleServiceError(c, reqID, err, "failed to update user role")
 		return
 	}
 
@@ -231,6 +266,8 @@ func handleServiceError(c *gin.Context, reqID string, err error, fallbackMsg str
 		c.JSON(http.StatusConflict, gin.H{"error": "A category with this slug already exists"})
 	case errors.Is(err, ErrRefundAlreadyDecided):
 		c.JSON(http.StatusConflict, gin.H{"error": "refund has already been decided"})
+	case errors.Is(err, ErrLastAdmin):
+		c.JSON(http.StatusConflict, gin.H{"error": "cannot remove the last administrator"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fallbackMsg})
 	}

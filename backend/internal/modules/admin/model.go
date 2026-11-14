@@ -1,6 +1,11 @@
 package admin
 
-import "time"
+import (
+	"time"
+
+	"craftbridge/backend/internal/modules/audit"
+	"craftbridge/backend/internal/modules/report"
+)
 
 // UserSummary represents a platform user record for administrative management.
 type UserSummary struct {
@@ -16,6 +21,11 @@ type UserSummary struct {
 type UpdateUserStatusInput struct {
 	Status string `json:"status" binding:"required"`
 	Reason string `json:"reason"`
+}
+
+// UpdateUserRoleInput represents the request payload to update a user's role.
+type UpdateUserRoleInput struct {
+	Role string `json:"role" binding:"required"`
 }
 
 // SellerApplication represents a seller onboarding/verification application.
@@ -70,4 +80,58 @@ type CategoryInput struct {
 	Slug        string `json:"slug"`
 	Description string `json:"description"`
 	IsActive    *bool  `json:"is_active"`
+}
+
+// DashboardUserRoleCounts holds user counts broken down by role.
+type DashboardUserRoleCounts struct {
+	Buyer  int64 `json:"BUYER"`
+	Seller int64 `json:"SELLER"`
+	Admin  int64 `json:"ADMIN"`
+}
+
+// DashboardUserStats holds aggregated user counts for the admin dashboard.
+type DashboardUserStats struct {
+	Total     int64                   `json:"total"`
+	Active    int64                   `json:"active"`
+	Suspended int64                   `json:"suspended"`
+	ByRole    DashboardUserRoleCounts `json:"by_role"`
+}
+
+// DashboardSellerStats holds aggregated seller application counts by status.
+type DashboardSellerStats struct {
+	Pending   int64 `json:"pending"`
+	Approved  int64 `json:"approved"`
+	Rejected  int64 `json:"rejected"`
+	Suspended int64 `json:"suspended"`
+}
+
+// DashboardRefundStats holds aggregated pending refund metrics.
+type DashboardRefundStats struct {
+	PendingCount  int64   `json:"pending_count"`
+	PendingAmount float64 `json:"pending_amount"`
+}
+
+// DashboardCategoryStats holds aggregated product category counts.
+type DashboardCategoryStats struct {
+	Total  int64 `json:"total"`
+	Active int64 `json:"active"`
+}
+
+// DashboardCounts bundles the database aggregate counts fetched by the admin repository.
+type DashboardCounts struct {
+	Users      DashboardUserStats
+	Sellers    DashboardSellerStats
+	Refunds    DashboardRefundStats
+	Categories DashboardCategoryStats
+}
+
+// DashboardSummary represents the complete response payload for GET /api/v1/admin/dashboard.
+type DashboardSummary struct {
+	Users          DashboardUserStats     `json:"users"`
+	Sellers        DashboardSellerStats   `json:"sellers"`
+	Refunds        DashboardRefundStats   `json:"refunds"`
+	Categories     DashboardCategoryStats `json:"categories"`
+	Revenue        report.RevenueSummary  `json:"revenue"`
+	RecentActivity []audit.AuditLog       `json:"recent_activity"`
+	GeneratedAt    time.Time              `json:"generated_at"`
 }

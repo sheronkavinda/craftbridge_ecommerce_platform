@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"craftbridge/backend/internal/modules/audit"
+	"craftbridge/backend/internal/modules/report"
 )
 
 var (
@@ -20,8 +21,9 @@ var (
 
 // RepositoryStore defines the persistence contract required by the admin service.
 type RepositoryStore interface {
-	ListUsers(ctx context.Context, role, status string, limit, offset int) ([]UserSummary, error)
+	ListUsers(ctx context.Context, role, status, search string, limit, offset int) ([]UserSummary, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) (*UserSummary, error)
+	UpdateUserRole(ctx context.Context, userID, role string) (*UserSummary, error)
 	ListSellerApplications(ctx context.Context, status string, limit, offset int) ([]SellerApplication, error)
 	UpdateSellerStatus(ctx context.Context, sellerID, status, notes string) (*SellerApplication, error)
 	ListRefunds(ctx context.Context, status string, limit, offset int) ([]RefundRecord, error)
@@ -30,34 +32,50 @@ type RepositoryStore interface {
 	CreateCategory(ctx context.Context, categoryID, name, slug, description string, isActive bool) (*Category, error)
 	UpdateCategory(ctx context.Context, categoryID, name, slug, description string, isActive bool) (*Category, error)
 	DeleteCategory(ctx context.Context, categoryID string) error
+	GetDashboardCounts(ctx context.Context) (*DashboardCounts, error)
+}
+
+// RevenueSummaryProvider defines the report module contract used by the admin service for dashboard revenue metrics.
+type RevenueSummaryProvider interface {
+	GetRevenueSummary(ctx context.Context, startStr, endStr string) (*report.RevenueSummary, error)
 }
 
 // Service implements business rules, input sanitization, IDOR checks, and automated audit logging.
 type Service struct {
-	repo         RepositoryStore
-	auditService *audit.Service
+	repo           RepositoryStore
+	auditService   *audit.Service
+	revenueService RevenueSummaryProvider
 }
 
 // NewService constructs a new admin service.
-func NewService(repo RepositoryStore, auditService *audit.Service) *Service {
+func NewService(repo RepositoryStore, auditService *audit.Service, revenueProviders ...RevenueSummaryProvider) *Service {
+	var rev RevenueSummaryProvider
+	if len(revenueProviders) > 0 && revenueProviders[0] != nil {
+		rev = revenueProviders[0]
+	} else if rp, ok := repo.(RevenueSummaryProvider); ok {
+		rev = rp
+	}
 	return &Service{
-		repo:         repo,
-		auditService: auditService,
+		repo:           repo,
+		auditService:   auditService,
+		revenueService: rev,
 	}
 }
 
-// ListUsers returns a paginated list of platform users.
-func (s *Service) ListUsers(ctx context.Context, role, status string, limit, offset int) ([]UserSummary, error) {
+// ListUsers returns a paginated list of platform users filtered by role, status, and search term.
+func (s *Service) ListUsers(ctx context.Context, role, status, search string, limit, offset int) ([]UserSummary, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
+	cleanSearch := escapeLikePattern(sanitizeInput(search, 100))
 	return s.repo.ListUsers(
 		ctx,
 		strings.ToUpper(sanitizeInput(role, 32)),
 		strings.ToUpper(sanitizeInput(status, 32)),
+		cleanSearch,
 		limit,
 		offset,
 	)
@@ -97,6 +115,82 @@ func (s *Service) UpdateUserStatus(ctx context.Context, actorID, actorName, requ
 	s.recordAudit(ctx, actorID, actorName, "USER_STATUS_UPDATE", "user:"+userID, "SUCCESS", requestID, details)
 
 	return user, nil
+}
+
+// UpdateUserRole validates inputs, prevents self-role changes and removal of the last ADMIN, updates the user's role, and writes an immutable audit log.
+// NOTE: Per the project plan, roles are owned by the identity module and this should call that module's service once it exists.
+func (s *Service) UpdateUserRole(ctx context.Context, actorID, actorName, requestID, userID string, input UpdateUserRoleInput) (*UserSummary, error) {
+	ctx = WithRequestID(ctx, requestID)
+	if err := validateResourceID(userID); err != nil {
+		return nil, err
+	}
+
+	normalizedRole := strings.ToUpper(strings.TrimSpace(input.Role))
+	switch normalizedRole {
+	case "BUYER", "SELLER", "ADMIN":
+	default:
+		return nil, fmt.Errorf("%w: role must be BUYER, SELLER, or ADMIN", ErrInvalidInput)
+	}
+
+	// IDOR & Self-Lockout Protection: An administrator cannot change their own role.
+	if strings.EqualFold(strings.TrimSpace(actorID), strings.TrimSpace(userID)) {
+		s.recordAudit(ctx, actorID, actorName, "USER_ROLE_UPDATE", "user:"+userID, "FAILURE", requestID, "blocked self-role modification attempt")
+		return nil, fmt.Errorf("%w: administrators cannot modify their own role", ErrForbiddenIDOR)
+	}
+
+	user, err := s.repo.UpdateUserRole(ctx, userID, normalizedRole)
+	if err != nil {
+		s.recordAudit(ctx, actorID, actorName, "USER_ROLE_UPDATE", "user:"+userID, "FAILURE", requestID, err.Error())
+		return nil, err
+	}
+
+	details := fmt.Sprintf("role set to %s", normalizedRole)
+	s.recordAudit(ctx, actorID, actorName, "USER_ROLE_UPDATE", "user:"+userID, "SUCCESS", requestID, details)
+
+	return user, nil
+}
+
+// GetDashboardSummary aggregates users, sellers, refunds, categories, revenue summary, and the latest 5 audit log entries.
+func (s *Service) GetDashboardSummary(ctx context.Context) (*DashboardSummary, error) {
+	counts, err := s.repo.GetDashboardCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var revenueSummary report.RevenueSummary
+	if s.revenueService != nil {
+		rev, revErr := s.revenueService.GetRevenueSummary(ctx, "", "")
+		if revErr != nil {
+			return nil, revErr
+		}
+		if rev != nil {
+			revenueSummary = *rev
+		}
+	}
+
+	recentActivity := make([]audit.AuditLog, 0)
+	if s.auditService != nil {
+		logs, auditErr := s.auditService.ListLogs(ctx, audit.ListAuditLogsFilter{
+			Limit:  5,
+			Offset: 0,
+		})
+		if auditErr != nil {
+			return nil, auditErr
+		}
+		if logs != nil {
+			recentActivity = logs
+		}
+	}
+
+	return &DashboardSummary{
+		Users:          counts.Users,
+		Sellers:        counts.Sellers,
+		Refunds:        counts.Refunds,
+		Categories:     counts.Categories,
+		Revenue:        revenueSummary,
+		RecentActivity: recentActivity,
+		GeneratedAt:    time.Now().UTC(),
+	}, nil
 }
 
 // ListSellerApplications returns a paginated list of seller onboarding applications.
@@ -329,6 +423,15 @@ func truncateRunes(value string, maxRunes int) string {
 
 func sanitizeInput(value string, maxRunes int) string {
 	return truncateRunes(value, maxRunes)
+}
+
+func escapeLikePattern(value string) string {
+	r := strings.NewReplacer(
+		`\`, `\\`,
+		`%`, `\%`,
+		`_`, `\_`,
+	)
+	return r.Replace(value)
 }
 
 func foldLatinRune(r rune) rune {
