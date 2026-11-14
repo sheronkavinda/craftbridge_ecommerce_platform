@@ -1,0 +1,96 @@
+:root {
+  /* Color Palette — CraftBridge Admin Console */
+  --cb-navy-950: #0f172a;
+  --cb-navy-900: #162138;
+  --cb-navy-800: #1e2d4a;
+  --cb-navy-700: #2b3e63;
+  --cb-cream-50: #faf7f2;
+  --cb-cream-100: #f3ede2;
+  --cb-surface: #ffffff;
+  --cb-border: #e4dccf;
+  --cb-text-primary: #1c2434;
+  --cb-text-secondary: #5a6478;
+  --cb-text-muted: #94a3b8;
+  --cb-terracotta-600: #c85a32;
+  --cb-terracotta-700: #ad4924;
+  --cb-terracotta-100: #fbece6;
+  --cb-focus-ring: #e07a53;
+
+  /* Typography */
+  --cb-font-serif: Georgia, 'Times New Roman', Times, serif;
+  --cb-font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Spacing & Layout */
+  --cb-space-1: 0.25rem;
+  --cb-space-2: 0.5rem;
+  --cb-space-3: 0.75rem;
+  --cb-space-4: 1rem;
+  --cb-space-5: 1.25rem;
+  --cb-space-6: 1.5rem;
+  --cb-space-8: 2rem;
+  --cb-radius-sm: 6px;
+  --cb-radius-md: 10px;
+  --cb-sidebar-width: 260px;
+  --cb-topbar-height: 60px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background-color: var(--cb-cream-50);
+  color: var(--cb-text-primary);
+  font-family: var(--cb-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+.cb-page-title {
+  font-family: var(--cb-font-serif);
+  color: var(--cb-text-primary);
+  font-weight: 700;
+}
+
+h1 {
+  font-size: 1.75rem;
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: 1.35rem;
+  line-height: 1.3;
+}
+
+.cb-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cb-space-2);
+  padding: var(--cb-space-2) var(--cb-space-4);
+  background-color: var(--cb-terracotta-600);
+  color: #ffffff;
+  border: 1px solid var(--cb-terracotta-600);
+  border-radius: var(--cb-radius-sm);
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    background-color: var(--cb-terracotta-700);
+    border-color: var(--cb-terracotta-700);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--cb-focus-ring);
+    outline-offset: 2px;
+  }
+}

@@ -1,0 +1,738 @@
+<section class="mx-auto flex max-w-6xl flex-col gap-6">
+  <!-- Page Header -->
+  <header class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="font-serif-display text-2xl font-bold text-ink md:text-3xl">Reports</h1>
+      <p class="mt-1 text-sm text-ink-secondary">
+        Platform revenue analytics, daily cashflow breakdown, and per-seller sales performance.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      (click)="refreshReports()"
+      [disabled]="isAnyLoading()"
+      aria-label="Refresh all report sections"
+      class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink shadow-2xs transition hover:bg-cream-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {{ isAnyLoading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+  </header>
+
+  <!-- Screen-Reader Polite Announcement -->
+  <div class="sr-only" aria-live="polite" aria-atomic="true">
+    {{ liveAnnouncement() }}
+  </div>
+
+  <!-- Date Range Filter & Quick Presets -->
+  <section
+    aria-label="Report date range filter"
+    class="rounded-xl border border-line bg-surface p-4 shadow-xs md:p-5"
+  >
+    <div class="flex flex-col gap-4">
+      <!-- Quick Presets -->
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <span class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+          Quick range presets
+        </span>
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Date range presets">
+          <button
+            type="button"
+            (click)="selectPreset('LAST_7_DAYS')"
+            [class]="
+              activePreset() === 'LAST_7_DAYS'
+                ? 'cursor-pointer rounded-full bg-terracotta px-3 py-1 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+                : 'cursor-pointer rounded-full border border-line bg-cream-50 px-3 py-1 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+            "
+          >
+            Last 7 days
+          </button>
+          <button
+            type="button"
+            (click)="selectPreset('LAST_30_DAYS')"
+            [class]="
+              activePreset() === 'LAST_30_DAYS'
+                ? 'cursor-pointer rounded-full bg-terracotta px-3 py-1 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+                : 'cursor-pointer rounded-full border border-line bg-cream-50 px-3 py-1 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+            "
+          >
+            Last 30 days
+          </button>
+          <button
+            type="button"
+            (click)="selectPreset('THIS_MONTH')"
+            [class]="
+              activePreset() === 'THIS_MONTH'
+                ? 'cursor-pointer rounded-full bg-terracotta px-3 py-1 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+                : 'cursor-pointer rounded-full border border-line bg-cream-50 px-3 py-1 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+            "
+          >
+            This month
+          </button>
+          <button
+            type="button"
+            (click)="selectPreset('ALL_TIME')"
+            [class]="
+              activePreset() === 'ALL_TIME'
+                ? 'cursor-pointer rounded-full bg-terracotta px-3 py-1 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+                : 'cursor-pointer rounded-full border border-line bg-cream-50 px-3 py-1 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+            "
+          >
+            All time
+          </button>
+        </div>
+      </div>
+
+      <!-- Custom Date Inputs -->
+      <div class="grid grid-cols-1 gap-4 border-t border-line pt-4 md:grid-cols-12 md:items-end">
+        <div class="md:col-span-4">
+          <label
+            for="report-from-date"
+            class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary"
+          >
+            From date
+          </label>
+          <input
+            id="report-from-date"
+            type="date"
+            [ngModel]="fromDateInput()"
+            (ngModelChange)="onFromDateChange($event)"
+            [attr.aria-invalid]="dateValidationError() ? 'true' : 'false'"
+            class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          />
+        </div>
+
+        <div class="md:col-span-4">
+          <label
+            for="report-to-date"
+            class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary"
+          >
+            To date
+          </label>
+          <input
+            id="report-to-date"
+            type="date"
+            [ngModel]="toDateInput()"
+            (ngModelChange)="onToDateChange($event)"
+            [attr.aria-invalid]="dateValidationError() ? 'true' : 'false'"
+            class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          />
+        </div>
+
+        <div class="flex items-center justify-end gap-2 md:col-span-4">
+          <button
+            type="button"
+            (click)="selectPreset('ALL_TIME')"
+            [disabled]="!appliedFromDate() && !appliedToDate() && !fromDateInput() && !toDateInput()"
+            class="cursor-pointer rounded-md border border-line bg-cream-50 px-3.5 py-2 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            (click)="applyDateRange()"
+            [disabled]="dateValidationError() !== '' || isAnyLoading()"
+            class="cursor-pointer rounded-md bg-terracotta px-4 py-2 text-xs font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Apply range
+          </button>
+        </div>
+      </div>
+
+      @if (dateValidationError()) {
+        <p role="alert" class="text-xs font-semibold text-red-700">
+          {{ dateValidationError() }}
+        </p>
+      }
+    </div>
+  </section>
+
+  <!-- 1. Revenue Summary Cards -->
+  <section aria-labelledby="reports-summary-heading" class="flex flex-col gap-3">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h2 id="reports-summary-heading" class="font-serif-display text-lg font-bold text-ink">
+        Revenue Summary
+      </h2>
+      <span class="text-xs text-ink-secondary">
+        @if (appliedFromDate() || appliedToDate()) {
+          Window: {{ appliedFromDate() || 'Start' }} &rarr; {{ appliedToDate() || 'Present' }}
+        } @else {
+          Window: All time
+        }
+      </span>
+    </div>
+
+    @if (isSummaryLoading()) {
+      <div
+        role="status"
+        aria-live="polite"
+        class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+      >
+        <span class="sr-only">Loading revenue summary...</span>
+        @for (card of [1, 2, 3]; track card) {
+          <div class="h-32 w-full animate-pulse rounded-xl border border-line bg-surface p-5">
+            <div class="h-3.5 w-1/2 rounded bg-cream-100"></div>
+            <div class="mt-4 h-7 w-2/3 rounded bg-cream-100"></div>
+            <div class="mt-3 h-3 w-3/4 rounded bg-cream-100"></div>
+          </div>
+        }
+      </div>
+    } @else if (summaryError()) {
+      <div
+        role="alert"
+        class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-5 py-4"
+      >
+        <p class="text-sm font-medium text-red-800">{{ summaryError() }}</p>
+        <button
+          type="button"
+          (click)="loadSummary()"
+          class="cursor-pointer rounded-md border border-line bg-surface px-3.5 py-1.5 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (revenueSummary(); as summary) {
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <!-- Gross Verified Payments -->
+        <article
+          class="flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs"
+        >
+          <div>
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+              Gross verified payments
+            </h3>
+            <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-ink">
+              {{ summary.gross_verified_payments | currencyLkr }}
+            </p>
+          </div>
+          <p class="mt-3 text-xs text-ink-secondary">
+            {{ summary.verified_payment_count }}
+            {{ summary.verified_payment_count === 1 ? 'verified payment' : 'verified payments' }}
+            &middot; Updated {{ summary.generated_at | date: 'shortTime' }}
+          </p>
+        </article>
+
+        <!-- Approved Refunds -->
+        <article
+          class="flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs"
+        >
+          <div>
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+              Approved refunds
+            </h3>
+            <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-red-700">
+              {{ summary.total_refunds | currencyLkr }}
+            </p>
+          </div>
+          <p class="mt-3 text-xs text-ink-secondary">
+            {{ summary.refund_count }}
+            {{ summary.refund_count === 1 ? 'approved refund' : 'approved refunds' }}
+            &middot; Updated {{ summary.generated_at | date: 'shortTime' }}
+          </p>
+        </article>
+
+        <!-- Net Revenue -->
+        <article
+          class="flex flex-col justify-between rounded-xl border-2 border-terracotta bg-navy p-5 text-white shadow-xs md:col-span-2 lg:col-span-1"
+        >
+          <div>
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-cream-100/80">
+                Net revenue
+              </h3>
+              <span
+                class="rounded-full bg-terracotta px-2.5 py-0.5 text-[11px] font-semibold text-white"
+              >
+                Verified &minus; Refunds
+              </span>
+            </div>
+            <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-white">
+              {{ summary.net_revenue | currencyLkr }}
+            </p>
+          </div>
+          <p class="mt-3 text-xs text-cream-100/80">
+            {{ summary.verified_payment_count }} payments, {{ summary.refund_count }} refunds
+            &middot; Updated {{ summary.generated_at | date: 'shortTime' }}
+          </p>
+        </article>
+      </div>
+    }
+  </section>
+
+  <!-- 2. Daily Revenue Breakdown Chart -->
+  <section
+    aria-labelledby="daily-revenue-heading"
+    class="rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6"
+  >
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+      <div>
+        <h2 id="daily-revenue-heading" class="font-serif-display text-xl font-bold text-ink">
+          Daily Revenue Breakdown
+        </h2>
+        <p class="mt-0.5 text-xs text-ink-secondary">
+          Daily verified payments versus net revenue (hover or focus a bar to inspect exact figures)
+        </p>
+      </div>
+
+      <button
+        type="button"
+        (click)="exportDailyRevenueCsv()"
+        [disabled]="isDailyLoading() || !hasDailyRevenueData()"
+        aria-label="Export daily revenue breakdown as CSV"
+        class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-cream-50 px-3.5 py-2 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Export CSV
+      </button>
+    </div>
+
+    @if (isDailyLoading()) {
+      <div role="status" aria-live="polite" class="space-y-4 py-6">
+        <span class="sr-only">Loading daily revenue chart...</span>
+        <div class="h-60 w-full animate-pulse rounded-lg bg-cream-100"></div>
+      </div>
+    } @else if (dailyError()) {
+      <div
+        role="alert"
+        class="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 p-8 text-center"
+      >
+        <p class="text-sm font-medium text-red-800">{{ dailyError() }}</p>
+        <button
+          type="button"
+          (click)="loadDailyRevenue()"
+          class="cursor-pointer rounded-md border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (!hasDailyRevenueData()) {
+      <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
+        <p class="font-serif-display text-lg font-bold text-ink">No revenue in this period</p>
+        <p class="max-w-md text-sm text-ink-secondary">
+          No verified payments or approved refunds were recorded during the selected date range.
+        </p>
+      </div>
+    } @else {
+      <!-- Legend & Active Point Tooltip Readout -->
+      <div
+        class="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-line bg-cream-50/70 px-4 py-3"
+      >
+        <div class="flex flex-wrap items-center gap-4 text-xs font-semibold text-ink">
+          <span class="inline-flex items-center gap-1.5">
+            <span class="inline-block h-3 w-3 rounded-xs bg-navy/30"></span>
+            Gross verified
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <span class="inline-block h-3 w-3 rounded-xs bg-terracotta"></span>
+            Net revenue
+          </span>
+        </div>
+
+        @if (activeChartPoint(); as pt) {
+          <div
+            role="status"
+            aria-live="polite"
+            class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs"
+          >
+            <span class="font-mono font-bold text-ink">{{ pt.date }}</span>
+            <span class="text-ink-secondary">
+              Gross: <strong class="tabular-nums text-ink">{{ pt.verified_payments | currencyLkr }}</strong>
+            </span>
+            <span class="text-ink-secondary">
+              Refunds: <strong class="tabular-nums text-red-700">{{ pt.refunds | currencyLkr }}</strong>
+            </span>
+            <span class="text-ink-secondary">
+              Net: <strong class="tabular-nums text-terracotta-700">{{ pt.net_revenue | currencyLkr }}</strong>
+            </span>
+          </div>
+        }
+      </div>
+
+      <!-- Responsive Inline SVG Bar Chart -->
+      <div class="w-full overflow-x-auto">
+        <svg
+          role="img"
+          [attr.aria-label]="chartAriaSummary()"
+          [attr.viewBox]="'0 0 ' + svgWidth + ' ' + svgHeight"
+          class="h-64 min-w-[480px] w-full select-none"
+        >
+          <!-- Horizontal Grid Lines & Y-Axis Ticks -->
+          @for (tick of chartLayout().yTicks; track tick.y) {
+            <g>
+              <line
+                [attr.x1]="padLeft"
+                [attr.y1]="tick.y"
+                [attr.x2]="svgWidth - padRight"
+                [attr.y2]="tick.y"
+                class="stroke-line"
+                stroke-dasharray="3 3"
+                stroke-width="1"
+              />
+              <text
+                [attr.x]="padLeft - 8"
+                [attr.y]="tick.y + 4"
+                text-anchor="end"
+                class="fill-ink-secondary text-[10px] font-medium"
+              >
+                {{ tick.label }}
+              </text>
+            </g>
+          }
+
+          <!-- Zero Baseline -->
+          <line
+            [attr.x1]="padLeft"
+            [attr.y1]="chartLayout().zeroY"
+            [attr.x2]="svgWidth - padRight"
+            [attr.y2]="chartLayout().zeroY"
+            class="stroke-ink/40"
+            stroke-width="1.25"
+          />
+
+          <!-- Data Bars -->
+          @for (bar of chartLayout().bars; track bar.point.date) {
+            <g
+              tabindex="0"
+              role="graphics-symbol"
+              [attr.aria-label]="
+                bar.point.date +
+                ': Gross ' +
+                (bar.point.verified_payments | currencyLkr) +
+                ', Refunds ' +
+                (bar.point.refunds | currencyLkr) +
+                ', Net ' +
+                (bar.point.net_revenue | currencyLkr)
+              "
+              (mouseenter)="selectChartPoint(bar.point)"
+              (focus)="selectChartPoint(bar.point)"
+              class="cursor-pointer focus:outline-none"
+            >
+              <!-- Gross Payments Background Bar -->
+              <rect
+                [attr.x]="bar.x"
+                [attr.y]="bar.grossY"
+                [attr.width]="bar.width"
+                [attr.height]="bar.grossHeight"
+                rx="3"
+                class="fill-navy/25 transition-opacity hover:fill-navy/40"
+              />
+
+              <!-- Net Revenue Foreground Bar -->
+              <rect
+                [attr.x]="bar.x + bar.width * 0.14"
+                [attr.y]="bar.netY"
+                [attr.width]="bar.width * 0.72"
+                [attr.height]="bar.netHeight"
+                rx="2.5"
+                [attr.class]="
+                  bar.isNegativeNet
+                    ? 'fill-red-600 transition-opacity hover:fill-red-700'
+                    : 'fill-terracotta transition-opacity hover:fill-terracotta-700'
+                "
+              />
+
+              <title>
+                {{ bar.point.date }} — Gross: {{ bar.point.verified_payments | currencyLkr }} |
+                Refunds: {{ bar.point.refunds | currencyLkr }} | Net:
+                {{ bar.point.net_revenue | currencyLkr }}
+              </title>
+
+              <!-- X-Axis Date Label (thinned when many bars) -->
+              @if (bar.showXLabel) {
+                <text
+                  [attr.x]="bar.x + bar.width / 2"
+                  [attr.y]="svgHeight - 12"
+                  text-anchor="middle"
+                  class="fill-ink-secondary font-mono text-[10px]"
+                >
+                  {{ bar.shortDateLabel }}
+                </text>
+              }
+            </g>
+          }
+        </svg>
+      </div>
+
+      <!-- Visually-Hidden Data Table Fallback for Screen Readers -->
+      <table class="sr-only">
+        <caption>Daily revenue breakdown in LKR</caption>
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Gross Verified Payments</th>
+            <th scope="col">Approved Refunds</th>
+            <th scope="col">Net Revenue</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (pt of chronologicalDailyPoints(); track pt.date) {
+            <tr>
+              <td>{{ pt.date }}</td>
+              <td>{{ pt.verified_payments | currencyLkr }}</td>
+              <td>{{ pt.refunds | currencyLkr }}</td>
+              <td>{{ pt.net_revenue | currencyLkr }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </section>
+
+  <!-- 3. Seller Sales Table -->
+  <section
+    aria-labelledby="seller-sales-heading"
+    class="rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6"
+  >
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+      <div>
+        <h2 id="seller-sales-heading" class="font-serif-display text-xl font-bold text-ink">
+          Seller Sales Performance
+        </h2>
+        <p class="mt-0.5 text-xs text-ink-secondary">
+          Per-seller order volume, gross verified sales, refunds, and net revenue (click any column
+          header to sort)
+        </p>
+      </div>
+
+      <button
+        type="button"
+        (click)="exportSellerRevenueCsv()"
+        [disabled]="isSellersLoading() || sortedSellers().length === 0"
+        aria-label="Export seller sales report as CSV"
+        class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-cream-50 px-3.5 py-2 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Export CSV
+      </button>
+    </div>
+
+    @if (isSellersLoading()) {
+      <div role="status" aria-live="polite" class="space-y-3 py-6">
+        <span class="sr-only">Loading seller sales report...</span>
+        @for (row of [1, 2, 3, 4]; track row) {
+          <div class="h-14 w-full animate-pulse rounded-lg bg-cream-100"></div>
+        }
+      </div>
+    } @else if (sellersError()) {
+      <div
+        role="alert"
+        class="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 p-8 text-center"
+      >
+        <p class="text-sm font-medium text-red-800">{{ sellersError() }}</p>
+        <button
+          type="button"
+          (click)="loadSellerRevenue()"
+          class="cursor-pointer rounded-md border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (sortedSellers().length === 0) {
+      <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
+        <p class="font-serif-display text-lg font-bold text-ink">No seller sales data found</p>
+        <p class="max-w-md text-sm text-ink-secondary">
+          No seller stores matched the selected report criteria.
+        </p>
+      </div>
+    } @else {
+      <div class="overflow-x-auto">
+        <table
+          class="block w-full border-collapse text-left md:table"
+          aria-label="Seller sales performance"
+        >
+          <caption class="sr-only">
+            Seller sales performance sorted by {{ sortColumn() }} ({{ sortDirection() }})
+          </caption>
+          <thead class="hidden border-b border-line bg-cream-50 md:table-header-group">
+            <tr>
+              <th
+                scope="col"
+                [attr.aria-sort]="getAriaSort('store_name')"
+                class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                <button
+                  type="button"
+                  (click)="toggleSort('store_name')"
+                  class="inline-flex cursor-pointer items-center gap-1 font-bold uppercase tracking-wider text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  <span>Seller / Store</span>
+                  @if (sortColumn() === 'store_name') {
+                    <span aria-hidden="true">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+                  }
+                </button>
+              </th>
+              <th
+                scope="col"
+                [attr.aria-sort]="getAriaSort('order_count')"
+                class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                <button
+                  type="button"
+                  (click)="toggleSort('order_count')"
+                  class="inline-flex cursor-pointer items-center justify-end gap-1 font-bold uppercase tracking-wider text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  <span>Orders</span>
+                  @if (sortColumn() === 'order_count') {
+                    <span aria-hidden="true">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+                  }
+                </button>
+              </th>
+              <th
+                scope="col"
+                [attr.aria-sort]="getAriaSort('verified_payments')"
+                class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                <button
+                  type="button"
+                  (click)="toggleSort('verified_payments')"
+                  class="inline-flex cursor-pointer items-center justify-end gap-1 font-bold uppercase tracking-wider text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  <span>Gross sales</span>
+                  @if (sortColumn() === 'verified_payments') {
+                    <span aria-hidden="true">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+                  }
+                </button>
+              </th>
+              <th
+                scope="col"
+                [attr.aria-sort]="getAriaSort('refunds')"
+                class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                <button
+                  type="button"
+                  (click)="toggleSort('refunds')"
+                  class="inline-flex cursor-pointer items-center justify-end gap-1 font-bold uppercase tracking-wider text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  <span>Refunds</span>
+                  @if (sortColumn() === 'refunds') {
+                    <span aria-hidden="true">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+                  }
+                </button>
+              </th>
+              <th
+                scope="col"
+                [attr.aria-sort]="getAriaSort('net_revenue')"
+                class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                <button
+                  type="button"
+                  (click)="toggleSort('net_revenue')"
+                  class="inline-flex cursor-pointer items-center justify-end gap-1 font-bold uppercase tracking-wider text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  <span>Net revenue</span>
+                  @if (sortColumn() === 'net_revenue') {
+                    <span aria-hidden="true">{{ sortDirection() === 'asc' ? '↑' : '↓' }}</span>
+                  }
+                </button>
+              </th>
+            </tr>
+          </thead>
+          <tbody class="block divide-y divide-line md:table-row-group">
+            @for (seller of sortedSellers(); track seller.seller_id) {
+              <tr
+                class="mb-3 block rounded-lg border border-line bg-surface p-4 transition hover:bg-cream-50/70 md:mb-0 md:table-row md:rounded-none md:border-0 md:border-b md:border-line md:p-0"
+              >
+                <!-- Store Name & ID -->
+                <td
+                  class="flex items-start justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Seller / Store
+                  </span>
+                  <div class="text-right md:text-left">
+                    <div class="font-semibold text-ink">{{ seller.store_name }}</div>
+                    <div class="font-mono text-xs text-ink-secondary">{{ seller.seller_id }}</div>
+                  </div>
+                </td>
+
+                <!-- Order Count -->
+                <td
+                  class="flex items-center justify-between gap-3 py-1.5 text-sm tabular-nums text-ink md:table-cell md:px-4 md:py-3.5 md:text-right"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Orders
+                  </span>
+                  <span class="font-medium">{{ seller.order_count }}</span>
+                </td>
+
+                <!-- Gross Sales -->
+                <td
+                  class="flex items-center justify-between gap-3 py-1.5 text-sm tabular-nums text-ink md:table-cell md:px-4 md:py-3.5 md:text-right"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Gross sales
+                  </span>
+                  <span>{{ seller.verified_payments | currencyLkr }}</span>
+                </td>
+
+                <!-- Refunds -->
+                <td
+                  class="flex items-center justify-between gap-3 py-1.5 text-sm tabular-nums text-red-700 md:table-cell md:px-4 md:py-3.5 md:text-right"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Refunds
+                  </span>
+                  <span>{{ seller.refunds | currencyLkr }}</span>
+                </td>
+
+                <!-- Net Revenue -->
+                <td
+                  class="mt-1 flex items-center justify-between gap-3 border-t border-line pt-2 text-sm font-bold tabular-nums text-ink md:mt-0 md:table-cell md:border-0 md:px-4 md:py-3.5 md:text-right"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Net revenue
+                  </span>
+                  <span>{{ seller.net_revenue | currencyLkr }}</span>
+                </td>
+              </tr>
+            }
+          </tbody>
+
+          <!-- Totals Footer Row -->
+          <tfoot class="block border-t-2 border-line bg-cream-50 font-semibold md:table-footer-group">
+            <tr
+              class="block rounded-lg border border-line bg-cream-50 p-4 md:table-row md:rounded-none md:border-0 md:p-0"
+            >
+              <th
+                scope="row"
+                class="flex items-center justify-between py-1 text-sm font-bold text-ink md:table-cell md:px-4 md:py-3.5"
+              >
+                <span>Total ({{ sortedSellers().length }} sellers)</span>
+              </th>
+              <td
+                class="flex items-center justify-between py-1 text-sm font-bold tabular-nums text-ink md:table-cell md:px-4 md:py-3.5 md:text-right"
+              >
+                <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                  Total orders
+                </span>
+                <span>{{ sellerTotals().orderCount }}</span>
+              </td>
+              <td
+                class="flex items-center justify-between py-1 text-sm font-bold tabular-nums text-ink md:table-cell md:px-4 md:py-3.5 md:text-right"
+              >
+                <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                  Total gross
+                </span>
+                <span>{{ sellerTotals().verifiedPayments | currencyLkr }}</span>
+              </td>
+              <td
+                class="flex items-center justify-between py-1 text-sm font-bold tabular-nums text-red-700 md:table-cell md:px-4 md:py-3.5 md:text-right"
+              >
+                <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                  Total refunds
+                </span>
+                <span>{{ sellerTotals().refunds | currencyLkr }}</span>
+              </td>
+              <td
+                class="flex items-center justify-between py-1 text-sm font-bold tabular-nums text-ink md:table-cell md:px-4 md:py-3.5 md:text-right"
+              >
+                <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                  Total net
+                </span>
+                <span>{{ sellerTotals().netRevenue | currencyLkr }}</span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    }
+  </section>
+</section>

@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy: #162138;
+  --color-navy-950: #0f172a;
+  --color-navy-900: #162138;
+  --color-navy-800: #1e2d4a;
+  --color-navy-700: #2b3e63;
+
+  --color-cream: #faf7f2;
+  --color-cream-50: #faf7f2;
+  --color-cream-100: #f3ede2;
+
+  --color-ink: #1c2434;
+  --color-ink-secondary: #5a6478;
+  --color-ink-muted: #94a3b8;
+
+  --color-terracotta: #c85a32;
+  --color-terracotta-600: #c85a32;
+  --color-terracotta-700: #ad4924;
+  --color-terracotta-100: #fbece6;
+
+  --color-line: #e4dccf;
+  --color-surface: #ffffff;
+  --color-focus-ring: #e07a53;
+
+  --font-serif-display: Georgia, 'Times New Roman', Times, serif;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+

@@ -1,0 +1,58 @@
+<div class="admin-layout" [class.sidebar-open]="isSidebarOpen">
+  <div
+    class="sidebar-backdrop"
+    *ngIf="isSidebarOpen"
+    (click)="closeSidebar()"
+    aria-hidden="true"
+  ></div>
+
+  <aside id="admin-sidebar" class="admin-sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-logo">CraftBridge</span>
+      <span class="brand-subtitle">Global Handmade Marketplace</span>
+    </div>
+
+    <nav aria-label="Admin navigation" class="sidebar-nav">
+      <ul class="nav-list">
+        <li *ngFor="let item of navItems" class="nav-item">
+          <a
+            [routerLink]="item.route"
+            routerLinkActive="active"
+            ariaCurrentWhenActive="page"
+            class="nav-link"
+            (click)="closeSidebar()"
+          >
+            {{ item.label }}
+          </a>
+        </li>
+      </ul>
+    </nav>
+  </aside>
+
+  <div class="admin-main-wrapper">
+    <header class="admin-topbar">
+      <button
+        type="button"
+        class="menu-toggle"
+        (click)="toggleSidebar()"
+        [attr.aria-expanded]="isSidebarOpen"
+        aria-controls="admin-sidebar"
+        aria-label="Toggle navigation menu"
+      >
+        <span class="menu-icon" aria-hidden="true">&#9776;</span>
+        <span class="menu-text">Menu</span>
+      </button>
+
+      <div class="topbar-spacer"></div>
+
+      <div class="topbar-user">
+        <span class="user-badge" aria-label="Current user role">Admin</span>
+      </div>
+    </header>
+
+    <main class="admin-content">
+      <router-outlet />
+    </main>
+  </div>
+</div>
+
