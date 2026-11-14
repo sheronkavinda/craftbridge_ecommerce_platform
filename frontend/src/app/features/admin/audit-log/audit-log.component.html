@@ -1,0 +1,419 @@
+<section class="mx-auto flex max-w-6xl flex-col gap-6">
+  <!-- Page Header -->
+  <header class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="font-serif-display text-2xl font-bold text-ink md:text-3xl">Audit logs</h1>
+      <p class="mt-1 text-sm text-ink-secondary">
+        A read-only, append-only record of administrative actions across the marketplace.
+      </p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <span
+        class="inline-flex items-center rounded-full border border-line bg-cream-50 px-3 py-1 text-xs font-semibold text-ink-secondary"
+      >
+        Read-only trail
+      </span>
+      <button
+        type="button"
+        (click)="refreshLogs()"
+        [disabled]="isLoading()"
+        aria-label="Refresh current page of audit logs"
+        class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-3.5 py-2 text-xs font-semibold text-ink shadow-2xs transition hover:bg-cream-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {{ isLoading() ? 'Refreshing...' : 'Refresh' }}
+      </button>
+    </div>
+  </header>
+
+  <!-- Screen-Reader Polite Announcement Region -->
+  <div class="sr-only" aria-live="polite" aria-atomic="true">
+    {{ liveAnnouncement() }}
+  </div>
+
+  <!-- Filter Bar -->
+  <section
+    aria-label="Audit log filters"
+    class="rounded-xl border border-line bg-surface p-4 shadow-xs md:p-5"
+  >
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-12 md:items-end">
+      <div class="md:col-span-5">
+        <label
+          for="audit-search"
+          class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary"
+        >
+          Search actor, action, target, or details
+        </label>
+        <input
+          id="audit-search"
+          type="search"
+          [ngModel]="searchQuery()"
+          (ngModelChange)="onSearchChange($event)"
+          placeholder="Filter current page..."
+          class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        />
+      </div>
+
+      <div class="md:col-span-3">
+        <label
+          for="audit-action-filter"
+          class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary"
+        >
+          Action
+        </label>
+        <select
+          id="audit-action-filter"
+          [ngModel]="selectedAction()"
+          (ngModelChange)="onActionChange($event)"
+          class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <option value="">All actions</option>
+          @for (action of distinctActions(); track action) {
+            <option [value]="action">{{ formatActionLabel(action) }} ({{ action }})</option>
+          }
+        </select>
+      </div>
+
+      <div class="md:col-span-3">
+        <label
+          for="audit-outcome-filter"
+          class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary"
+        >
+          Outcome
+        </label>
+        <select
+          id="audit-outcome-filter"
+          [ngModel]="selectedOutcome()"
+          (ngModelChange)="onOutcomeChange($event)"
+          class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <option value="">All</option>
+          <option value="SUCCESS">SUCCESS</option>
+          <option value="FAILURE">FAILURE</option>
+        </select>
+      </div>
+
+      <div class="flex md:col-span-1 md:justify-end">
+        <button
+          type="button"
+          (click)="resetFilters()"
+          [disabled]="!hasActiveFilters() && currentPage() === 1"
+          class="w-full cursor-pointer rounded-md border border-line bg-cream-50 px-3 py-2 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Audit Logs Table Card -->
+  <section
+    aria-labelledby="audit-logs-heading"
+    class="rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6"
+  >
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+      <div>
+        <h2 id="audit-logs-heading" class="font-serif-display text-xl font-bold text-ink">
+          Activity History
+        </h2>
+        <p class="mt-0.5 text-xs text-ink-secondary">
+          {{ showingRangeText() }} &middot; Page {{ currentPage() }} (newest first)
+        </p>
+      </div>
+
+      <!-- Top Pagination Summary & Controls -->
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          (click)="goToPreviousPage()"
+          [disabled]="!canGoPrevious()"
+          aria-label="Previous page of audit logs"
+          class="cursor-pointer rounded-md border border-line bg-cream-50 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          (click)="goToNextPage()"
+          [disabled]="!canGoNext()"
+          aria-label="Next page of audit logs"
+          class="cursor-pointer rounded-md border border-line bg-cream-50 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+
+    @if (isLoading()) {
+      <div role="status" aria-live="polite" class="space-y-3 py-6">
+        <span class="sr-only">Loading audit logs...</span>
+        @for (row of [1, 2, 3, 4, 5]; track row) {
+          <div class="h-14 w-full animate-pulse rounded-lg bg-cream-100"></div>
+        }
+      </div>
+    } @else if (loadError()) {
+      <div
+        role="alert"
+        class="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 p-8 text-center"
+      >
+        <p class="text-sm font-medium text-red-800">{{ loadError() }}</p>
+        <button
+          type="button"
+          (click)="loadLogs()"
+          class="cursor-pointer rounded-md border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (filteredLogs().length === 0) {
+      <div class="flex flex-col items-center justify-center gap-3 py-12 text-center">
+        <p class="font-serif-display text-lg font-bold text-ink">No audit entries match</p>
+        <p class="max-w-md text-sm text-ink-secondary">
+          No administrative events match your current filters or search query.
+        </p>
+        @if (hasActiveFilters() || currentPage() > 1) {
+          <button
+            type="button"
+            (click)="resetFilters()"
+            class="mt-1 inline-flex cursor-pointer items-center justify-center rounded-md bg-terracotta px-4 py-2 text-sm font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          >
+            Reset filters
+          </button>
+        }
+      </div>
+    } @else {
+      <div class="overflow-x-auto">
+        <table class="block w-full border-collapse text-left md:table" aria-label="Audit logs">
+          <caption class="sr-only">
+            Audit log entries ordered newest first with timestamp, actor, action, target, outcome,
+            details, and request ID
+          </caption>
+          <thead class="hidden border-b border-line bg-cream-50 md:table-header-group">
+            <tr>
+              <th
+                scope="col"
+                class="px-3.5 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                Time
+              </th>
+              <th
+                scope="col"
+                class="px-3.5 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                Actor
+              </th>
+              <th
+                scope="col"
+                class="px-3.5 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                Action
+              </th>
+              <th
+                scope="col"
+                class="px-3.5 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                Target
+              </th>
+              <th
+                scope="col"
+                class="px-3.5 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                Outcome
+              </th>
+              <th
+                scope="col"
+                class="px-3.5 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                Details
+              </th>
+              <th
+                scope="col"
+                class="px-3.5 py-3 text-right text-xs font-bold uppercase tracking-wider text-ink-secondary"
+              >
+                Request ID
+              </th>
+            </tr>
+          </thead>
+          <tbody class="block divide-y divide-line md:table-row-group">
+            @for (entry of filteredLogs(); track entry.id) {
+              <tr
+                class="mb-3 block rounded-lg border border-line bg-surface p-4 transition hover:bg-cream-50/70 md:mb-0 md:table-row md:rounded-none md:border-0 md:border-b md:border-line md:p-0"
+              >
+                <!-- Time -->
+                <td
+                  class="flex items-start justify-between gap-3 py-1.5 text-xs text-ink-secondary md:table-cell md:whitespace-nowrap md:px-3.5 md:py-3.5 md:align-top"
+                >
+                  <span class="font-semibold uppercase text-ink-secondary md:hidden">Time</span>
+                  <div class="text-right md:text-left">
+                    <div class="font-medium text-ink">
+                      {{ entry.created_at | date: 'mediumDate' }}
+                    </div>
+                    <div class="text-xs text-ink-secondary">
+                      {{ entry.created_at | date: 'mediumTime' }}
+                      @if (formatRelativeTime(entry.created_at); as relTime) {
+                        <span class="ml-1 text-ink-secondary/80">({{ relTime }})</span>
+                      }
+                    </div>
+                  </div>
+                </td>
+
+                <!-- Actor -->
+                <td
+                  class="flex items-start justify-between gap-3 py-1.5 text-sm md:table-cell md:px-3.5 md:py-3.5 md:align-top"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Actor
+                  </span>
+                  <div class="text-right md:text-left">
+                    <div class="font-semibold text-ink">{{ entry.actor_name || 'System' }}</div>
+                    <div class="font-mono text-xs text-ink-secondary">{{ entry.actor_id }}</div>
+                  </div>
+                </td>
+
+                <!-- Action -->
+                <td
+                  class="flex items-start justify-between gap-3 py-1.5 text-sm md:table-cell md:px-3.5 md:py-3.5 md:align-top"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Action
+                  </span>
+                  <div class="text-right md:text-left">
+                    <span
+                      [attr.title]="entry.action"
+                      class="inline-block cursor-help font-semibold text-ink decoration-dotted underline-offset-2 hover:underline"
+                    >
+                      {{ formatActionLabel(entry.action) }}
+                    </span>
+                    <div class="font-mono text-[11px] text-ink-secondary">{{ entry.action }}</div>
+                  </div>
+                </td>
+
+                <!-- Target -->
+                <td
+                  class="flex items-start justify-between gap-3 py-1.5 text-sm md:table-cell md:px-3.5 md:py-3.5 md:align-top"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Target
+                  </span>
+                  <span
+                    class="inline-block rounded bg-cream-100 px-2 py-0.5 font-mono text-xs text-ink"
+                  >
+                    {{ entry.target || '—' }}
+                  </span>
+                </td>
+
+                <!-- Outcome -->
+                <td
+                  class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-3.5 md:py-3.5 md:align-top"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Outcome
+                  </span>
+                  @if ((entry.outcome || '').toUpperCase() === 'FAILURE') {
+                    <span
+                      class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800"
+                    >
+                      FAILURE
+                    </span>
+                  } @else {
+                    <span
+                      class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800"
+                    >
+                      {{ (entry.outcome || 'SUCCESS').toUpperCase() }}
+                    </span>
+                  }
+                </td>
+
+                <!-- Details -->
+                <td
+                  class="flex flex-col gap-1 py-1.5 text-sm text-ink-secondary md:table-cell md:max-w-xs md:px-3.5 md:py-3.5 md:align-top"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Details
+                  </span>
+                  @if (entry.details) {
+                    <p
+                      [class.line-clamp-2]="!isExpanded(entry.id)"
+                      class="break-words text-xs leading-relaxed text-ink"
+                    >
+                      {{ entry.details }}
+                    </p>
+                    @if (shouldTruncateDetails(entry.details)) {
+                      <button
+                        type="button"
+                        (click)="toggleDetails(entry.id)"
+                        [attr.aria-expanded]="isExpanded(entry.id)"
+                        class="mt-1 self-start cursor-pointer text-xs font-semibold text-terracotta hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      >
+                        {{ isExpanded(entry.id) ? 'Show less' : 'Show more' }}
+                      </button>
+                    }
+                  } @else {
+                    <span class="text-xs text-ink-secondary">—</span>
+                  }
+                </td>
+
+                <!-- Request ID -->
+                <td
+                  class="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2.5 md:mt-0 md:table-cell md:whitespace-nowrap md:border-0 md:px-3.5 md:py-3.5 md:text-right md:align-top"
+                >
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">
+                    Request ID
+                  </span>
+                  @if (entry.request_id) {
+                    <div class="inline-flex items-center justify-end gap-1.5">
+                      <code
+                        class="rounded bg-cream-50 px-1.5 py-0.5 font-mono text-xs text-ink-secondary"
+                      >
+                        {{ entry.request_id }}
+                      </code>
+                      <button
+                        type="button"
+                        (click)="copyRequestId(entry)"
+                        [attr.aria-label]="'Copy request ID ' + entry.request_id"
+                        class="cursor-pointer rounded border border-line bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      >
+                        {{ copiedEntryId() === entry.id ? 'Copied' : 'Copy' }}
+                      </button>
+                    </div>
+                  } @else {
+                    <span class="font-mono text-xs text-ink-secondary">—</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- Bottom Pagination Bar -->
+    <div
+      class="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-4"
+      aria-label="Audit log pagination"
+    >
+      <p class="text-xs font-medium text-ink-secondary">
+        {{ showingRangeText() }}
+      </p>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          (click)="goToPreviousPage()"
+          [disabled]="!canGoPrevious()"
+          class="cursor-pointer rounded-md border border-line bg-cream-50 px-3.5 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Previous
+        </button>
+        <span class="px-2 text-xs font-semibold text-ink">Page {{ currentPage() }}</span>
+        <button
+          type="button"
+          (click)="goToNextPage()"
+          [disabled]="!canGoNext()"
+          class="cursor-pointer rounded-md border border-line bg-cream-50 px-3.5 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  </section>
+</section>

@@ -1,0 +1,355 @@
+<section class="mx-auto flex max-w-6xl flex-col gap-6">
+  <!-- Page Header -->
+  <header>
+    <h1 class="font-serif-display text-2xl font-bold text-ink md:text-3xl">Users</h1>
+    <p class="mt-1 text-sm text-ink-secondary">
+      Search, filter, and manage marketplace buyer, seller, and administrator accounts.
+    </p>
+  </header>
+
+  <!-- Polite Live Region for Success & Error Notices -->
+  <div aria-live="polite" aria-atomic="true">
+    @if (successMessage()) {
+      <div
+        role="status"
+        class="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
+      >
+        <span>{{ successMessage() }}</span>
+        <button
+          type="button"
+          (click)="successMessage.set('')"
+          aria-label="Dismiss success notice"
+          class="cursor-pointer rounded px-2 py-0.5 text-lg leading-none text-emerald-800 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          &times;
+        </button>
+      </div>
+    }
+    @if (actionError()) {
+      <div
+        role="alert"
+        class="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-900"
+      >
+        <span>{{ actionError() }}</span>
+        <button
+          type="button"
+          (click)="actionError.set('')"
+          aria-label="Dismiss error notice"
+          class="cursor-pointer rounded px-2 py-0.5 text-lg leading-none text-red-800 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          &times;
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- Filters Bar -->
+  <section
+    aria-label="User filters"
+    class="rounded-xl border border-line bg-surface p-4 shadow-xs md:p-5"
+  >
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-12 md:items-end">
+      <div class="md:col-span-5">
+        <label for="user-search" class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+          Search by name or email
+        </label>
+        <input
+          id="user-search"
+          type="search"
+          [ngModel]="searchQuery()"
+          (ngModelChange)="onSearchChange($event)"
+          placeholder="Search users..."
+          class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        />
+      </div>
+
+      <div class="md:col-span-3">
+        <label for="user-role-filter" class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+          Role
+        </label>
+        <select
+          id="user-role-filter"
+          [ngModel]="selectedRole()"
+          (ngModelChange)="onRoleChange($event)"
+          class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <option value="">All roles</option>
+          <option value="BUYER">Buyer</option>
+          <option value="SELLER">Seller</option>
+          <option value="ADMIN">Admin</option>
+        </select>
+      </div>
+
+      <div class="md:col-span-3">
+        <label for="user-status-filter" class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+          Status
+        </label>
+        <select
+          id="user-status-filter"
+          [ngModel]="selectedStatus()"
+          (ngModelChange)="onStatusChange($event)"
+          class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <option value="">All statuses</option>
+          <option value="ACTIVE">Active</option>
+          <option value="SUSPENDED">Suspended</option>
+        </select>
+      </div>
+
+      <div class="flex md:col-span-1 md:justify-end">
+        <button
+          type="button"
+          (click)="clearFilters()"
+          [disabled]="!hasActiveFilters()"
+          class="w-full cursor-pointer rounded-md border border-line bg-cream-50 px-3 py-2 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Users Table Card -->
+  <section
+    aria-labelledby="users-table-heading"
+    class="rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6"
+  >
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+      <div>
+        <h2 id="users-table-heading" class="font-serif-display text-xl font-bold text-ink">
+          Platform Accounts
+        </h2>
+        <p class="mt-0.5 text-xs text-ink-secondary">
+          Showing {{ filteredUsers().length }} {{ filteredUsers().length === 1 ? 'user' : 'users' }}
+        </p>
+      </div>
+    </div>
+
+    @if (isLoading()) {
+      <div
+        role="status"
+        aria-live="polite"
+        class="space-y-3 py-6"
+      >
+        <span class="sr-only">Loading users...</span>
+        @for (row of [1, 2, 3, 4]; track row) {
+          <div class="h-12 w-full animate-pulse rounded-lg bg-cream-100"></div>
+        }
+      </div>
+    } @else if (loadError()) {
+      <div
+        role="alert"
+        class="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 p-8 text-center"
+      >
+        <p class="text-sm font-medium text-red-800">{{ loadError() }}</p>
+        <button
+          type="button"
+          (click)="loadUsers()"
+          class="cursor-pointer rounded-md border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (filteredUsers().length === 0) {
+      <div class="flex flex-col items-center justify-center gap-3 py-12 text-center">
+        <p class="font-serif-display text-lg font-bold text-ink">No users match your filters</p>
+        <p class="max-w-md text-sm text-ink-secondary">
+          Try adjusting your role, status, or search query to see matching accounts.
+        </p>
+        <button
+          type="button"
+          (click)="clearFilters()"
+          class="mt-1 inline-flex cursor-pointer items-center justify-center rounded-md bg-terracotta px-4 py-2 text-sm font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        >
+          Clear filters
+        </button>
+      </div>
+    } @else {
+      <div class="overflow-x-auto">
+        <table class="block w-full border-collapse text-left md:table" aria-label="Platform users">
+          <caption class="sr-only">
+            Platform users with name, email, role, status, registration date, and account status actions
+          </caption>
+          <thead class="hidden border-b border-line bg-cream-50 md:table-header-group">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Name
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Email
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Role
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Status
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Created
+              </th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody class="block divide-y divide-line md:table-row-group">
+            @for (user of filteredUsers(); track user.id) {
+              <tr
+                class="mb-3 block rounded-lg border border-line bg-surface p-4 transition hover:bg-cream-50/70 md:mb-0 md:table-row md:rounded-none md:border-0 md:border-b md:border-line md:p-0"
+              >
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm font-semibold text-ink md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Name</span>
+                  <div>
+                    <div>{{ user.name }}</div>
+                    <div class="font-mono text-xs font-normal text-ink-secondary">{{ user.id }}</div>
+                  </div>
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm text-ink-secondary md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Email</span>
+                  <span>{{ user.email }}</span>
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Role</span>
+                  @switch (user.role.toUpperCase()) {
+                    @case ('ADMIN') {
+                      <span class="inline-flex items-center rounded-full bg-navy-900 px-2.5 py-0.5 text-xs font-semibold text-white">
+                        ADMIN
+                      </span>
+                    }
+                    @case ('SELLER') {
+                      <span class="inline-flex items-center rounded-full bg-terracotta-100 px-2.5 py-0.5 text-xs font-semibold text-terracotta-700">
+                        SELLER
+                      </span>
+                    }
+                    @default {
+                      <span class="inline-flex items-center rounded-full bg-cream-100 px-2.5 py-0.5 text-xs font-semibold text-ink">
+                        {{ user.role.toUpperCase() }}
+                      </span>
+                    }
+                  }
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Status</span>
+                  @if (!isSuspended(user)) {
+                    <span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                      {{ user.status.toUpperCase() }}
+                    </span>
+                  } @else {
+                    <span class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800">
+                      {{ user.status.toUpperCase() }}
+                    </span>
+                  }
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm text-ink-secondary md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Created</span>
+                  <span>{{ user.created_at | date: 'mediumDate' }}</span>
+                </td>
+
+                <td class="mt-2 flex items-center justify-end gap-2 border-t border-line pt-2.5 md:mt-0 md:table-cell md:whitespace-nowrap md:border-0 md:px-4 md:py-3.5 md:text-right">
+                  @if (isProtectedUser(user)) {
+                    <span
+                      title="Administrator accounts cannot be suspended or modified"
+                      class="inline-block"
+                    >
+                      <button
+                        type="button"
+                        disabled
+                        [attr.aria-label]="'Cannot modify admin account ' + user.name"
+                        class="cursor-not-allowed rounded-md border border-line bg-cream-50 px-3 py-1.5 text-xs font-semibold text-ink-secondary opacity-50"
+                      >
+                        Protected
+                      </button>
+                    </span>
+                  } @else if (isSuspended(user)) {
+                    <button
+                      type="button"
+                      (click)="activateUser(user)"
+                      [disabled]="updatingUserId() === user.id"
+                      [attr.aria-label]="'Activate ' + user.name"
+                      class="cursor-pointer rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {{ updatingUserId() === user.id ? 'Updating...' : 'Activate' }}
+                    </button>
+                  } @else {
+                    <button
+                      type="button"
+                      (click)="requestSuspend(user, $event.currentTarget)"
+                      [disabled]="updatingUserId() === user.id"
+                      [attr.aria-label]="'Suspend ' + user.name"
+                      class="cursor-pointer rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Suspend
+                    </button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+
+  <!-- Suspend Confirmation Modal Dialog -->
+  @if (pendingSuspendUser(); as target) {
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/60 p-4"
+      (click)="!updatingUserId() && cancelSuspend()"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="suspend-dialog-title"
+        aria-describedby="suspend-dialog-desc"
+        class="w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-xl"
+        (click)="$event.stopPropagation()"
+      >
+        <h2 id="suspend-dialog-title" class="font-serif-display text-xl font-bold text-ink">
+          Suspend {{ target.name }}?
+        </h2>
+        <p id="suspend-dialog-desc" class="mt-2 text-sm text-ink-secondary">
+          Suspending <strong class="font-semibold text-ink">{{ target.email }}</strong> will restrict
+          their marketplace access immediately and record an entry in the admin audit trail.
+        </p>
+
+        <div class="mt-4">
+          <label for="suspend-reason" class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+            Reason (optional)
+          </label>
+          <textarea
+            id="suspend-reason"
+            rows="2"
+            [ngModel]="suspendReason()"
+            (ngModelChange)="suspendReason.set($event)"
+            placeholder="e.g. Policy violation investigation"
+            class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          ></textarea>
+        </div>
+
+        <div class="mt-6 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            (click)="cancelSuspend()"
+            [disabled]="updatingUserId() !== null"
+            class="cursor-pointer rounded-md border border-line bg-cream-50 px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            #confirmSuspendBtn
+            type="button"
+            (click)="confirmSuspend()"
+            [disabled]="updatingUserId() !== null"
+            class="cursor-pointer rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {{ updatingUserId() ? 'Suspending...' : 'Suspend user' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</section>

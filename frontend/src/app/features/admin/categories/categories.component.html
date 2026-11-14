@@ -1,0 +1,387 @@
+<section class="mx-auto flex max-w-6xl flex-col gap-6">
+  <!-- Page Header -->
+  <header class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="font-serif-display text-2xl font-bold text-ink md:text-3xl">Categories</h1>
+      <p class="mt-1 text-sm text-ink-secondary">
+        Organize and curate handmade craft categories across the marketplace catalog.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      (click)="openCreateForm($event.currentTarget)"
+      class="inline-flex cursor-pointer items-center justify-center rounded-md bg-terracotta px-4 py-2 text-sm font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+    >
+      New category
+    </button>
+  </header>
+
+  <!-- Polite Live Region for Success Notices -->
+  <div aria-live="polite" aria-atomic="true">
+    @if (successMessage()) {
+      <div
+        role="status"
+        class="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
+      >
+        <span>{{ successMessage() }}</span>
+        <button
+          type="button"
+          (click)="successMessage.set('')"
+          aria-label="Dismiss success notice"
+          class="cursor-pointer rounded px-2 py-0.5 text-lg leading-none text-emerald-800 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          &times;
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- Main Categories Card -->
+  <section
+    aria-labelledby="product-categories-heading"
+    class="rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6"
+  >
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+      <div>
+        <h2 id="product-categories-heading" class="font-serif-display text-xl font-bold text-ink">
+          Product Categories
+        </h2>
+        <p class="mt-0.5 text-xs text-ink-secondary">
+          {{ categories().length }} {{ categories().length === 1 ? 'category' : 'categories' }} configured
+        </p>
+      </div>
+    </div>
+
+    @if (isLoading()) {
+      <div
+        role="status"
+        aria-live="polite"
+        class="flex flex-col items-center justify-center gap-3 py-12 text-center text-ink-secondary"
+      >
+        <div
+          aria-hidden="true"
+          class="h-8 w-8 animate-spin rounded-full border-4 border-cream-100 border-t-terracotta"
+        ></div>
+        <p class="text-sm font-medium">Loading product categories...</p>
+      </div>
+    } @else if (loadError()) {
+      <div
+        role="alert"
+        class="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 p-8 text-center"
+      >
+        <p class="text-sm font-medium text-red-800">{{ loadError() }}</p>
+        <button
+          type="button"
+          (click)="loadCategories()"
+          class="cursor-pointer rounded-md border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (categories().length === 0) {
+      <div class="flex flex-col items-center justify-center gap-3 py-12 text-center">
+        <p class="font-serif-display text-lg font-bold text-ink">No categories yet</p>
+        <p class="max-w-md text-sm text-ink-secondary">
+          Create your first product category so artisans can classify their handmade goods.
+        </p>
+        <button
+          type="button"
+          (click)="openCreateForm($event.currentTarget)"
+          class="mt-1 inline-flex cursor-pointer items-center justify-center rounded-md bg-terracotta px-4 py-2 text-sm font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        >
+          New category
+        </button>
+      </div>
+    } @else {
+      <div class="overflow-x-auto">
+        <table class="block w-full border-collapse text-left md:table" aria-label="Product categories">
+          <caption class="sr-only">
+            Product categories with name, slug, description, active status, and actions
+          </caption>
+          <thead class="hidden border-b border-line bg-cream-50 md:table-header-group">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Name
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Slug
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Description
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Status
+              </th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody class="block divide-y divide-line md:table-row-group">
+            @for (cat of categories(); track cat.id) {
+              <tr
+                class="mb-3 block rounded-lg border border-line bg-surface p-4 transition hover:bg-cream-50/70 md:mb-0 md:table-row md:rounded-none md:border-0 md:border-b md:border-line md:p-0"
+              >
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm font-semibold text-ink md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Name</span>
+                  <span>{{ cat.name }}</span>
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Slug</span>
+                  <code class="rounded bg-cream-100 px-2 py-0.5 text-xs font-medium text-navy-800">
+                    {{ cat.slug }}
+                  </code>
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm text-ink-secondary md:table-cell md:max-w-sm md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Description</span>
+                  <span class="text-right md:text-left">{{ cat.description || '—' }}</span>
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Status</span>
+                  @if (cat.is_active) {
+                    <span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                      Active
+                    </span>
+                  } @else {
+                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                      Inactive
+                    </span>
+                  }
+                </td>
+
+                <td class="mt-2 flex items-center justify-end gap-2 border-t border-line pt-2.5 md:mt-0 md:table-cell md:whitespace-nowrap md:border-0 md:px-4 md:py-3.5 md:text-right">
+                  <button
+                    type="button"
+                    (click)="openEditForm(cat, $event.currentTarget)"
+                    [attr.aria-label]="'Edit ' + cat.name"
+                    class="cursor-pointer rounded-md border border-line bg-cream-50 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    (click)="requestDelete(cat, $event.currentTarget)"
+                    [attr.aria-label]="'Delete ' + cat.name"
+                    class="cursor-pointer rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+
+  <!-- Create / Edit Modal Dialog -->
+  @if (isFormOpen()) {
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/60 p-4"
+      (click)="!isSaving() && closeForm()"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="category-dialog-title"
+        class="w-full max-w-lg rounded-xl border border-line bg-surface p-6 shadow-xl"
+        (click)="$event.stopPropagation()"
+      >
+        <div class="mb-4 flex items-center justify-between border-b border-line pb-3">
+          <h2 id="category-dialog-title" class="font-serif-display text-xl font-bold text-ink">
+            {{ editingCategoryId() ? 'Edit category' : 'New category' }}
+          </h2>
+          <button
+            type="button"
+            (click)="closeForm()"
+            [disabled]="isSaving()"
+            aria-label="Close category dialog"
+            class="cursor-pointer rounded p-1 text-lg leading-none text-ink-secondary hover:bg-cream-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            &times;
+          </button>
+        </div>
+
+        @if (formError()) {
+          <div
+            role="alert"
+            class="mb-4 rounded-md border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm font-medium text-red-800"
+          >
+            {{ formError() }}
+          </div>
+        }
+
+        <form [formGroup]="categoryForm" (ngSubmit)="saveCategory()" novalidate class="space-y-4">
+          <div>
+            <label for="cat-name" class="block text-sm font-semibold text-ink">
+              Name <span aria-hidden="true" class="text-terracotta">*</span>
+            </label>
+            <input
+              #nameInput
+              id="cat-name"
+              type="text"
+              formControlName="name"
+              placeholder="e.g. Handwoven Textiles"
+              [attr.aria-invalid]="hasFieldError('name')"
+              [attr.aria-describedby]="hasFieldError('name') ? 'cat-name-error' : null"
+              class="mt-1 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-[invalid=true]:border-red-500 aria-[invalid=true]:bg-red-50/40"
+            />
+            @if (hasFieldError('name')) {
+              <p id="cat-name-error" role="alert" class="mt-1 text-xs font-medium text-red-700">
+                @if (categoryForm.controls.name.errors?.['required']) {
+                  Category name is required.
+                } @else if (categoryForm.controls.name.errors?.['minlength']) {
+                  Category name must be at least 2 characters.
+                } @else if (categoryForm.controls.name.errors?.['maxlength']) {
+                  Category name cannot exceed 120 characters.
+                }
+              </p>
+            }
+          </div>
+
+          <div>
+            <label for="cat-slug" class="block text-sm font-semibold text-ink">
+              Slug <span aria-hidden="true" class="text-terracotta">*</span>
+            </label>
+            <input
+              id="cat-slug"
+              type="text"
+              formControlName="slug"
+              placeholder="e.g. handwoven-textiles"
+              (input)="onSlugManualEdit()"
+              [attr.aria-invalid]="hasFieldError('slug')"
+              [attr.aria-describedby]="hasFieldError('slug') ? 'cat-slug-error' : 'cat-slug-hint'"
+              class="mt-1 w-full rounded-md border border-line bg-cream-50 px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-[invalid=true]:border-red-500 aria-[invalid=true]:bg-red-50/40"
+            />
+            <p id="cat-slug-hint" class="mt-1 text-xs text-ink-secondary">
+              Lowercase letters, numbers, and hyphens only (auto-generated from name).
+            </p>
+            @if (hasFieldError('slug')) {
+              <p id="cat-slug-error" role="alert" class="mt-1 text-xs font-medium text-red-700">
+                @if (categoryForm.controls.slug.errors?.['required']) {
+                  Category slug is required.
+                } @else if (categoryForm.controls.slug.errors?.['minlength']) {
+                  Slug must be at least 2 characters.
+                } @else if (categoryForm.controls.slug.errors?.['maxlength']) {
+                  Slug cannot exceed 120 characters.
+                } @else if (categoryForm.controls.slug.errors?.['pattern']) {
+                  Slug may contain only lowercase letters, numbers, and hyphens.
+                }
+              </p>
+            }
+          </div>
+
+          <div>
+            <label for="cat-description" class="block text-sm font-semibold text-ink">
+              Description
+            </label>
+            <textarea
+              id="cat-description"
+              rows="3"
+              formControlName="description"
+              placeholder="Short description of products included in this category..."
+              [attr.aria-invalid]="hasFieldError('description')"
+              [attr.aria-describedby]="hasFieldError('description') ? 'cat-description-error' : null"
+              class="mt-1 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-[invalid=true]:border-red-500 aria-[invalid=true]:bg-red-50/40"
+            ></textarea>
+            @if (hasFieldError('description')) {
+              <p id="cat-description-error" role="alert" class="mt-1 text-xs font-medium text-red-700">
+                Description cannot exceed 512 characters.
+              </p>
+            }
+          </div>
+
+          <div class="flex items-center gap-2.5 pt-1">
+            <input
+              id="cat-active"
+              type="checkbox"
+              formControlName="is_active"
+              class="h-4 w-4 cursor-pointer rounded border-line accent-terracotta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            />
+            <label for="cat-active" class="cursor-pointer text-sm font-medium text-ink">
+              Active and visible in marketplace catalog
+            </label>
+          </div>
+
+          <div class="mt-6 flex items-center justify-end gap-3 border-t border-line pt-4">
+            <button
+              type="button"
+              (click)="closeForm()"
+              [disabled]="isSaving()"
+              class="cursor-pointer rounded-md border border-line bg-cream-50 px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              [disabled]="categoryForm.invalid || isSaving()"
+              class="cursor-pointer rounded-md bg-terracotta px-4 py-2 text-sm font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {{ isSaving() ? 'Saving...' : editingCategoryId() ? 'Save changes' : 'Create category' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- Delete Confirmation Modal Dialog -->
+  @if (pendingDeleteCategory(); as target) {
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/60 p-4"
+      (click)="!isDeleting() && cancelDelete()"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-desc"
+        class="w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-xl"
+        (click)="$event.stopPropagation()"
+      >
+        <h2 id="delete-dialog-title" class="font-serif-display text-xl font-bold text-ink">
+          Delete {{ target.name }}?
+        </h2>
+        <p id="delete-dialog-desc" class="mt-2 text-sm text-ink-secondary">
+          Are you sure you want to delete the category
+          <code class="rounded bg-cream-100 px-1.5 py-0.5 text-xs font-medium text-navy-800">{{ target.slug }}</code>?
+          This action cannot be undone.
+        </p>
+
+        @if (deleteError()) {
+          <div
+            role="alert"
+            class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800"
+          >
+            {{ deleteError() }}
+          </div>
+        }
+
+        <div class="mt-6 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            (click)="cancelDelete()"
+            [disabled]="isDeleting()"
+            class="cursor-pointer rounded-md border border-line bg-cream-50 px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            #confirmDeleteBtn
+            type="button"
+            (click)="confirmDelete()"
+            [disabled]="isDeleting()"
+            class="cursor-pointer rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {{ isDeleting() ? 'Deleting...' : 'Delete category' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</section>

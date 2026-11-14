@@ -1,0 +1,447 @@
+<section class="mx-auto flex max-w-6xl flex-col gap-6">
+  <!-- Page Header -->
+  <header>
+    <h1 class="font-serif-display text-2xl font-bold text-ink md:text-3xl">
+      Seller applications
+    </h1>
+    <p class="mt-1 text-sm text-ink-secondary">
+      Review artisan onboarding applications and approve or reject marketplace storefronts.
+    </p>
+  </header>
+
+  <!-- Polite Live Region for Success Notices -->
+  <div aria-live="polite" aria-atomic="true">
+    @if (successMessage()) {
+      <div
+        role="status"
+        class="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
+      >
+        <span>{{ successMessage() }}</span>
+        <button
+          type="button"
+          (click)="successMessage.set('')"
+          aria-label="Dismiss success notice"
+          class="cursor-pointer rounded px-2 py-0.5 text-lg leading-none text-emerald-800 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          &times;
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- Status Filter Tabs -->
+  <nav
+    aria-label="Seller application status filter"
+    class="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-2 shadow-xs"
+  >
+    <button
+      type="button"
+      (click)="selectTab('PENDING')"
+      [attr.aria-pressed]="activeTab() === 'PENDING'"
+      [class]="
+        activeTab() === 'PENDING'
+          ? 'inline-flex cursor-pointer items-center gap-2 rounded-lg bg-terracotta px-3.5 py-2 text-xs font-semibold text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+          : 'inline-flex cursor-pointer items-center gap-2 rounded-lg bg-transparent px-3.5 py-2 text-xs font-semibold text-ink-secondary transition hover:bg-cream-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+      "
+    >
+      <span>Pending</span>
+      <span
+        [class]="
+          activeTab() === 'PENDING'
+            ? 'rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold text-white'
+            : 'rounded-full bg-cream-100 px-2 py-0.5 text-[11px] font-bold text-ink'
+        "
+      >
+        {{ counts().PENDING }}
+      </span>
+    </button>
+
+    <button
+      type="button"
+      (click)="selectTab('APPROVED')"
+      [attr.aria-pressed]="activeTab() === 'APPROVED'"
+      [class]="
+        activeTab() === 'APPROVED'
+          ? 'inline-flex cursor-pointer items-center gap-2 rounded-lg bg-terracotta px-3.5 py-2 text-xs font-semibold text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+          : 'inline-flex cursor-pointer items-center gap-2 rounded-lg bg-transparent px-3.5 py-2 text-xs font-semibold text-ink-secondary transition hover:bg-cream-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+      "
+    >
+      <span>Approved</span>
+      <span
+        [class]="
+          activeTab() === 'APPROVED'
+            ? 'rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold text-white'
+            : 'rounded-full bg-cream-100 px-2 py-0.5 text-[11px] font-bold text-ink'
+        "
+      >
+        {{ counts().APPROVED }}
+      </span>
+    </button>
+
+    <button
+      type="button"
+      (click)="selectTab('REJECTED')"
+      [attr.aria-pressed]="activeTab() === 'REJECTED'"
+      [class]="
+        activeTab() === 'REJECTED'
+          ? 'inline-flex cursor-pointer items-center gap-2 rounded-lg bg-terracotta px-3.5 py-2 text-xs font-semibold text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+          : 'inline-flex cursor-pointer items-center gap-2 rounded-lg bg-transparent px-3.5 py-2 text-xs font-semibold text-ink-secondary transition hover:bg-cream-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+      "
+    >
+      <span>Rejected</span>
+      <span
+        [class]="
+          activeTab() === 'REJECTED'
+            ? 'rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold text-white'
+            : 'rounded-full bg-cream-100 px-2 py-0.5 text-[11px] font-bold text-ink'
+        "
+      >
+        {{ counts().REJECTED }}
+      </span>
+    </button>
+
+    <button
+      type="button"
+      (click)="selectTab('ALL')"
+      [attr.aria-pressed]="activeTab() === 'ALL'"
+      [class]="
+        activeTab() === 'ALL'
+          ? 'inline-flex cursor-pointer items-center gap-2 rounded-lg bg-terracotta px-3.5 py-2 text-xs font-semibold text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+          : 'inline-flex cursor-pointer items-center gap-2 rounded-lg bg-transparent px-3.5 py-2 text-xs font-semibold text-ink-secondary transition hover:bg-cream-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+      "
+    >
+      <span>All</span>
+      <span
+        [class]="
+          activeTab() === 'ALL'
+            ? 'rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold text-white'
+            : 'rounded-full bg-cream-100 px-2 py-0.5 text-[11px] font-bold text-ink'
+        "
+      >
+        {{ counts().ALL }}
+      </span>
+    </button>
+  </nav>
+
+  <!-- Applications Table Card -->
+  <section
+    aria-labelledby="seller-applications-heading"
+    class="rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6"
+  >
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+      <div>
+        <h2 id="seller-applications-heading" class="font-serif-display text-xl font-bold text-ink">
+          Onboarding Queue
+        </h2>
+        <p class="mt-0.5 text-xs text-ink-secondary">
+          Showing {{ filteredApplications().length }}
+          {{ filteredApplications().length === 1 ? 'application' : 'applications' }}
+        </p>
+      </div>
+    </div>
+
+    @if (isLoading()) {
+      <div role="status" aria-live="polite" class="space-y-3 py-6">
+        <span class="sr-only">Loading seller applications...</span>
+        @for (row of [1, 2, 3]; track row) {
+          <div class="h-14 w-full animate-pulse rounded-lg bg-cream-100"></div>
+        }
+      </div>
+    } @else if (loadError()) {
+      <div
+        role="alert"
+        class="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 p-8 text-center"
+      >
+        <p class="text-sm font-medium text-red-800">{{ loadError() }}</p>
+        <button
+          type="button"
+          (click)="loadApplications()"
+          class="cursor-pointer rounded-md border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (filteredApplications().length === 0) {
+      <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
+        <p class="font-serif-display text-lg font-bold text-ink">{{ emptyStateMessage() }}</p>
+        <p class="max-w-md text-sm text-ink-secondary">
+          @if (activeTab() === 'PENDING') {
+            All seller onboarding requests have been reviewed.
+          } @else {
+            Switch tabs above to view applications with a different review status.
+          }
+        </p>
+      </div>
+    } @else {
+      <div class="overflow-x-auto">
+        <table
+          class="block w-full border-collapse text-left md:table"
+          aria-label="Seller applications"
+        >
+          <caption class="sr-only">
+            Seller onboarding applications with store name, applicant user ID, status, applied date, notes, and review actions
+          </caption>
+          <thead class="hidden border-b border-line bg-cream-50 md:table-header-group">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Store name
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Applicant ID
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Status
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Applied
+              </th>
+              <th scope="col" class="px-4 py-3 text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Notes
+              </th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-ink-secondary">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody class="block divide-y divide-line md:table-row-group">
+            @for (app of filteredApplications(); track app.id) {
+              <tr
+                class="mb-3 block rounded-lg border border-line bg-surface p-4 transition hover:bg-cream-50/70 md:mb-0 md:table-row md:rounded-none md:border-0 md:border-b md:border-line md:p-0"
+              >
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm font-semibold text-ink md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Store name</span>
+                  <div>
+                    <div>{{ app.store_name }}</div>
+                    <div class="font-mono text-xs font-normal text-ink-secondary">{{ app.id }}</div>
+                  </div>
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Applicant ID</span>
+                  <code class="rounded bg-cream-100 px-2 py-0.5 text-xs font-medium text-navy-800">
+                    {{ app.user_id }}
+                  </code>
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Status</span>
+                  @switch (app.status.toUpperCase()) {
+                    @case ('APPROVED') {
+                      <span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                        APPROVED
+                      </span>
+                    }
+                    @case ('REJECTED') {
+                      <span class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800">
+                        REJECTED
+                      </span>
+                    }
+                    @case ('PENDING') {
+                      <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                        PENDING
+                      </span>
+                    }
+                    @default {
+                      <span class="inline-flex items-center rounded-full bg-cream-100 px-2.5 py-0.5 text-xs font-semibold text-ink">
+                        {{ app.status.toUpperCase() }}
+                      </span>
+                    }
+                  }
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm text-ink-secondary md:table-cell md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Applied</span>
+                  <span>{{ app.submitted_at | date: 'mediumDate' }}</span>
+                </td>
+
+                <td class="flex items-center justify-between gap-3 py-1.5 text-sm text-ink-secondary md:table-cell md:max-w-xs md:px-4 md:py-3.5">
+                  <span class="text-xs font-semibold uppercase text-ink-secondary md:hidden">Notes</span>
+                  <span class="text-right md:text-left">{{ app.notes || '—' }}</span>
+                </td>
+
+                <td class="mt-2 flex items-center justify-end gap-2 border-t border-line pt-2.5 md:mt-0 md:table-cell md:whitespace-nowrap md:border-0 md:px-4 md:py-3.5 md:text-right">
+                  @if (isPending(app)) {
+                    <button
+                      type="button"
+                      (click)="openApproveDialog(app, $event.currentTarget)"
+                      [attr.aria-label]="'Approve ' + app.store_name"
+                      class="cursor-pointer rounded-md bg-terracotta px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      (click)="openRejectDialog(app, $event.currentTarget)"
+                      [attr.aria-label]="'Reject ' + app.store_name"
+                      class="cursor-pointer rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      Reject
+                    </button>
+                  } @else {
+                    <span class="text-xs font-medium text-ink-secondary">
+                      @if (app.reviewed_at) {
+                        Reviewed {{ app.reviewed_at | date: 'shortDate' }}
+                      } @else {
+                        Decided
+                      }
+                    </span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+
+  <!-- Approve Confirmation Modal Dialog -->
+  @if (pendingApproveTarget(); as target) {
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/60 p-4"
+      (click)="!isSubmitting() && closeApproveDialog()"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="approve-dialog-title"
+        aria-describedby="approve-dialog-desc"
+        class="w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-xl"
+        (click)="$event.stopPropagation()"
+      >
+        <h2 id="approve-dialog-title" class="font-serif-display text-xl font-bold text-ink">
+          Approve {{ target.store_name }}?
+        </h2>
+        <p id="approve-dialog-desc" class="mt-2 text-sm text-ink-secondary">
+          Approving this application will activate the storefront for applicant
+          <code class="rounded bg-cream-100 px-1.5 py-0.5 text-xs font-medium text-navy-800">{{ target.user_id }}</code>
+          and record the decision in the audit trail.
+        </p>
+
+        @if (dialogError()) {
+          <div
+            role="alert"
+            class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800"
+          >
+            {{ dialogError() }}
+          </div>
+        }
+
+        <form [formGroup]="approveForm" (ngSubmit)="confirmApprove()" novalidate class="mt-4">
+          <div>
+            <label for="approve-notes" class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+              Verification notes (optional)
+            </label>
+            <textarea
+              id="approve-notes"
+              rows="2"
+              formControlName="notes"
+              placeholder="e.g. Verified artisan portfolio and registration"
+              class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            ></textarea>
+          </div>
+
+          <div class="mt-6 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              (click)="closeApproveDialog()"
+              [disabled]="isSubmitting()"
+              class="cursor-pointer rounded-md border border-line bg-cream-50 px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              #confirmApproveBtn
+              type="submit"
+              [disabled]="isSubmitting() || approveForm.invalid"
+              class="cursor-pointer rounded-md bg-terracotta px-4 py-2 text-sm font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {{ isSubmitting() ? 'Approving...' : 'Approve seller' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- Reject Modal Dialog (Required Reason/Notes) -->
+  @if (pendingRejectTarget(); as target) {
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/60 p-4"
+      (click)="!isSubmitting() && closeRejectDialog()"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reject-dialog-title"
+        aria-describedby="reject-dialog-desc"
+        class="w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-xl"
+        (click)="$event.stopPropagation()"
+      >
+        <h2 id="reject-dialog-title" class="font-serif-display text-xl font-bold text-ink">
+          Reject {{ target.store_name }}?
+        </h2>
+        <p id="reject-dialog-desc" class="mt-2 text-sm text-ink-secondary">
+          Please provide a reason for rejecting this seller application. This note is stored on the
+          application and in the audit log.
+        </p>
+
+        @if (dialogError()) {
+          <div
+            role="alert"
+            class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800"
+          >
+            {{ dialogError() }}
+          </div>
+        }
+
+        <form [formGroup]="rejectForm" (ngSubmit)="confirmReject()" novalidate class="mt-4">
+          <div>
+            <label for="reject-notes" class="block text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+              Rejection reason / notes <span aria-hidden="true" class="text-terracotta">*</span>
+            </label>
+            <textarea
+              #rejectNotesInput
+              id="reject-notes"
+              rows="3"
+              formControlName="notes"
+              placeholder="Explain why the application cannot be approved..."
+              [attr.aria-invalid]="hasRejectNotesError()"
+              [attr.aria-describedby]="hasRejectNotesError() ? 'reject-notes-error' : null"
+              class="mt-1.5 w-full rounded-md border border-line bg-cream-50 px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-[invalid=true]:border-red-500 aria-[invalid=true]:bg-red-50/40"
+            ></textarea>
+            @if (hasRejectNotesError()) {
+              <p id="reject-notes-error" role="alert" class="mt-1 text-xs font-medium text-red-700">
+                @if (rejectForm.controls.notes.errors?.['required']) {
+                  A rejection reason is required.
+                } @else if (rejectForm.controls.notes.errors?.['minlength']) {
+                  Rejection reason must be at least 3 characters.
+                } @else if (rejectForm.controls.notes.errors?.['maxlength']) {
+                  Rejection reason cannot exceed 512 characters.
+                }
+              </p>
+            }
+          </div>
+
+          <div class="mt-6 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              (click)="closeRejectDialog()"
+              [disabled]="isSubmitting()"
+              class="cursor-pointer rounded-md border border-line bg-cream-50 px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              [disabled]="rejectForm.invalid || isSubmitting()"
+              class="cursor-pointer rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {{ isSubmitting() ? 'Rejecting...' : 'Reject application' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</section>
