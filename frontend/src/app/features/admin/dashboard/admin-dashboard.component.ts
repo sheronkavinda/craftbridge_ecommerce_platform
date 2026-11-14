@@ -14,10 +14,10 @@ import { RouterLink } from '@angular/router';
 import { CurrencyLkrPipe } from '../../../shared/pipes/currency-lkr.pipe';
 import {
   AuditLog,
-  RefundRecord,
+  DashboardCategoryStats,
+  DashboardSummary,
+  DashboardUserStats,
   RevenueSummary,
-  SellerApplication,
-  UserSummary,
 } from '../admin.models';
 import { AdminService } from '../admin.service';
 
@@ -33,75 +33,50 @@ export class AdminDashboardComponent implements OnInit {
   private readonly adminService = inject(AdminService);
   private readonly destroyRef = inject(DestroyRef);
 
-  // Section 1: Revenue Summary
-  readonly revenueSummary = signal<RevenueSummary | null>(null);
-  readonly isRevenueLoading = signal<boolean>(false);
-  readonly revenueError = signal<string>('');
-
-  // Section 2a: Seller Applications (Action Needed)
-  readonly sellerApplications = signal<SellerApplication[]>([]);
-  readonly isSellersLoading = signal<boolean>(false);
-  readonly sellersError = signal<string>('');
-
-  // Section 2b: Refunds (Action Needed)
-  readonly refunds = signal<RefundRecord[]>([]);
-  readonly isRefundsLoading = signal<boolean>(false);
-  readonly refundsError = signal<string>('');
-
-  // Section 2c: Users (Action Needed)
-  readonly users = signal<UserSummary[]>([]);
-  readonly isUsersLoading = signal<boolean>(false);
-  readonly usersError = signal<string>('');
-
-  // Section 3: Recent Activity (Audit Logs)
-  readonly recentAuditLogs = signal<AuditLog[]>([]);
-  readonly isAuditLoading = signal<boolean>(false);
-  readonly auditError = signal<string>('');
-
-  // Screen-reader live announcement
+  readonly dashboard = signal<DashboardSummary | null>(null);
+  readonly isLoading = signal<boolean>(false);
+  readonly loadError = signal<string>('');
   readonly liveAnnouncement = signal<string>('');
 
-  readonly isAnyLoading = computed<boolean>(() => {
-    return (
-      this.isRevenueLoading() ||
-      this.isSellersLoading() ||
-      this.isRefundsLoading() ||
-      this.isUsersLoading() ||
-      this.isAuditLoading()
-    );
+  readonly isAnyLoading = computed<boolean>(() => this.isLoading());
+
+  readonly revenueSummary = computed<RevenueSummary | null>(() => {
+    return this.dashboard()?.revenue ?? null;
   });
 
   readonly pendingSellerCount = computed<number>(() => {
-    let count = 0;
-    for (const app of this.sellerApplications()) {
-      if ((app.status ?? '').trim().toUpperCase() === 'PENDING') {
-        count++;
-      }
-    }
-    return count;
+    return this.dashboard()?.sellers?.pending ?? 0;
   });
 
   readonly pendingRefundStats = computed<{ count: number; totalAmount: number }>(() => {
-    let count = 0;
-    let totalAmount = 0;
-    for (const r of this.refunds()) {
-      if ((r.status ?? '').trim().toUpperCase() === 'PENDING') {
-        count++;
-        totalAmount += Number(r.amount) || 0;
-      }
-    }
-    return { count, totalAmount };
+    const refunds = this.dashboard()?.refunds;
+    return {
+      count: refunds?.pending_count ?? 0,
+      totalAmount: Number(refunds?.pending_amount) || 0,
+    };
   });
 
   readonly suspendedUserCount = computed<number>(() => {
-    let count = 0;
-    for (const u of this.users()) {
-      const st = (u.status ?? '').trim().toUpperCase();
-      if (st === 'SUSPENDED' || st === 'BANNED') {
-        count++;
+    return this.dashboard()?.users?.suspended ?? 0;
+  });
+
+  readonly userStats = computed<DashboardUserStats>(() => {
+    return (
+      this.dashboard()?.users ?? {
+        total: 0,
+        active: 0,
+        suspended: 0,
+        by_role: { BUYER: 0, SELLER: 0, ADMIN: 0 },
       }
-    }
-    return count;
+    );
+  });
+
+  readonly categoryStats = computed<DashboardCategoryStats>(() => {
+    return this.dashboard()?.categories ?? { total: 0, active: 0 };
+  });
+
+  readonly recentAuditLogs = computed<AuditLog[]>(() => {
+    return (this.dashboard()?.recent_activity ?? []).slice(0, 5);
   });
 
   ngOnInit(): void {
@@ -109,121 +84,24 @@ export class AdminDashboardComponent implements OnInit {
   }
 
   refreshAll(): void {
+    this.isLoading.set(true);
+    this.loadError.set('');
     this.liveAnnouncement.set('');
-    this.loadRevenue();
-    this.loadSellers();
-    this.loadRefunds();
-    this.loadUsers();
-    this.loadRecentAuditLogs();
-  }
-
-  loadRevenue(): void {
-    this.isRevenueLoading.set(true);
-    this.revenueError.set('');
 
     this.adminService
-      .getRevenueSummary()
+      .getDashboardSummary()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (summary) => {
-          this.revenueSummary.set(summary ?? null);
-          this.isRevenueLoading.set(false);
-          this.checkAndAnnounceCompletion();
+          this.dashboard.set(summary ?? null);
+          this.isLoading.set(false);
+          this.liveAnnouncement.set('Dashboard updated');
         },
         error: (err: unknown) => {
-          this.revenueError.set(
-            this.extractErrorMessage(err, 'Failed to load revenue summary.'),
+          this.loadError.set(
+            this.extractErrorMessage(err, 'Failed to load dashboard summary.'),
           );
-          this.isRevenueLoading.set(false);
-          this.checkAndAnnounceCompletion();
-        },
-      });
-  }
-
-  loadSellers(): void {
-    this.isSellersLoading.set(true);
-    this.sellersError.set('');
-
-    this.adminService
-      .listSellerApplications('', 200, 0)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (items) => {
-          this.sellerApplications.set(items ?? []);
-          this.isSellersLoading.set(false);
-          this.checkAndAnnounceCompletion();
-        },
-        error: (err: unknown) => {
-          this.sellersError.set(
-            this.extractErrorMessage(err, 'Failed to load seller applications.'),
-          );
-          this.isSellersLoading.set(false);
-          this.checkAndAnnounceCompletion();
-        },
-      });
-  }
-
-  loadRefunds(): void {
-    this.isRefundsLoading.set(true);
-    this.refundsError.set('');
-
-    this.adminService
-      .listRefunds('', 200, 0)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (items) => {
-          this.refunds.set(items ?? []);
-          this.isRefundsLoading.set(false);
-          this.checkAndAnnounceCompletion();
-        },
-        error: (err: unknown) => {
-          this.refundsError.set(this.extractErrorMessage(err, 'Failed to load refunds.'));
-          this.isRefundsLoading.set(false);
-          this.checkAndAnnounceCompletion();
-        },
-      });
-  }
-
-  loadUsers(): void {
-    this.isUsersLoading.set(true);
-    this.usersError.set('');
-
-    this.adminService
-      .listUsers('', '', 200, 0)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (items) => {
-          this.users.set(items ?? []);
-          this.isUsersLoading.set(false);
-          this.checkAndAnnounceCompletion();
-        },
-        error: (err: unknown) => {
-          this.usersError.set(this.extractErrorMessage(err, 'Failed to load users.'));
-          this.isUsersLoading.set(false);
-          this.checkAndAnnounceCompletion();
-        },
-      });
-  }
-
-  loadRecentAuditLogs(): void {
-    this.isAuditLoading.set(true);
-    this.auditError.set('');
-
-    this.adminService
-      .listAuditLogs('', '', '', 5, 0)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (items) => {
-          this.recentAuditLogs.set((items ?? []).slice(0, 5));
-          this.isAuditLoading.set(false);
-          this.checkAndAnnounceCompletion();
-        },
-        error: (err: unknown) => {
-          this.auditError.set(
-            this.extractErrorMessage(err, 'Failed to load recent activity.'),
-          );
-          this.isAuditLoading.set(false);
-          this.checkAndAnnounceCompletion();
+          this.isLoading.set(false);
         },
       });
   }
@@ -266,12 +144,6 @@ export class AdminDashboardComponent implements OnInit {
     return '';
   }
 
-  private checkAndAnnounceCompletion(): void {
-    if (!this.isAnyLoading()) {
-      this.liveAnnouncement.set('Dashboard updated');
-    }
-  }
-
   private extractErrorMessage(err: unknown, fallback: string): string {
     if (err instanceof HttpErrorResponse) {
       const serverError = err.error?.error ?? err.error?.message;
@@ -291,4 +163,3 @@ export class AdminDashboardComponent implements OnInit {
     return fallback;
   }
 }
-

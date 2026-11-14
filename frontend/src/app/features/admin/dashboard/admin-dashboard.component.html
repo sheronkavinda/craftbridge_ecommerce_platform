@@ -11,11 +11,11 @@
     <button
       type="button"
       (click)="refreshAll()"
-      [disabled]="isAnyLoading()"
+      [disabled]="isLoading()"
       aria-label="Refresh dashboard overview"
       class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink shadow-2xs transition hover:bg-cream-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {{ isAnyLoading() ? 'Refreshing...' : 'Refresh' }}
+      {{ isLoading() ? 'Refreshing...' : 'Refresh' }}
     </button>
   </header>
 
@@ -24,27 +24,11 @@
     {{ liveAnnouncement() }}
   </div>
 
-  <!-- 1. Revenue Summary Cards -->
-  <section aria-labelledby="revenue-heading" class="flex flex-col gap-3">
-    <div class="flex items-center justify-between">
-      <h2 id="revenue-heading" class="font-serif-display text-lg font-bold text-ink">
-        Financial Summary
-      </h2>
-      <a
-        routerLink="/admin/reports"
-        class="rounded text-xs font-semibold text-terracotta hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        View revenue reports &rarr;
-      </a>
-    </div>
-
-    @if (isRevenueLoading()) {
-      <div
-        role="status"
-        aria-live="polite"
-        class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-      >
-        <span class="sr-only">Loading revenue summary...</span>
+  @if (isLoading()) {
+    <!-- Full-page Loading Skeleton -->
+    <div role="status" aria-live="polite" class="flex flex-col gap-6">
+      <span class="sr-only">Loading dashboard summary...</span>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         @for (card of [1, 2, 3]; track card) {
           <div class="h-32 w-full animate-pulse rounded-xl border border-line bg-surface p-5">
             <div class="h-3.5 w-1/2 rounded bg-cream-100"></div>
@@ -53,121 +37,131 @@
           </div>
         }
       </div>
-    } @else if (revenueError()) {
-      <div
-        role="alert"
-        class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-5 py-4"
-      >
-        <p class="text-sm font-medium text-red-800">{{ revenueError() }}</p>
-        <button
-          type="button"
-          (click)="loadRevenue()"
-          class="cursor-pointer rounded-md border border-line bg-surface px-3.5 py-1.5 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          Retry
-        </button>
-      </div>
-    } @else if (revenueSummary(); as summary) {
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <!-- Gross Verified Payments -->
-        <article class="flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs">
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
-              Gross verified payments
-            </h3>
-            <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-ink">
-              {{ summary.gross_verified_payments | currencyLkr }}
-            </p>
+        @for (card of [1, 2, 3]; track card) {
+          <div class="h-36 w-full animate-pulse rounded-xl border border-line bg-surface p-5">
+            <div class="h-3.5 w-1/2 rounded bg-cream-100"></div>
+            <div class="mt-4 h-7 w-1/3 rounded bg-cream-100"></div>
+            <div class="mt-4 h-3 w-2/3 rounded bg-cream-100"></div>
           </div>
-          <p class="mt-3 text-xs text-ink-secondary">
-            {{ summary.verified_payment_count }}
-            {{ summary.verified_payment_count === 1 ? 'verified payment' : 'verified payments' }}
-            &middot; Updated {{ summary.generated_at | date: 'shortTime' }}
-          </p>
-        </article>
-
-        <!-- Approved Refunds -->
-        <article class="flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs">
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
-              Approved refunds
-            </h3>
-            <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-red-700">
-              {{ summary.total_refunds | currencyLkr }}
-            </p>
-          </div>
-          <p class="mt-3 text-xs text-ink-secondary">
-            {{ summary.refund_count }}
-            {{ summary.refund_count === 1 ? 'approved refund' : 'approved refunds' }}
-            &middot; Updated {{ summary.generated_at | date: 'shortTime' }}
-          </p>
-        </article>
-
-        <!-- Net Revenue (Highlighted) -->
-        <article
-          class="flex flex-col justify-between rounded-xl border-2 border-terracotta bg-navy p-5 text-white shadow-xs md:col-span-2 lg:col-span-1"
-        >
-          <div>
-            <div class="flex items-center justify-between gap-2">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-cream-100/80">
-                Net revenue
-              </h3>
-              <span class="rounded-full bg-terracotta px-2.5 py-0.5 text-[11px] font-semibold text-white">
-                Verified &minus; Refunds
-              </span>
-            </div>
-            <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-white">
-              {{ summary.net_revenue | currencyLkr }}
-            </p>
-          </div>
-          <p class="mt-3 text-xs text-cream-100/80">
-            {{ summary.verified_payment_count }} payments, {{ summary.refund_count }} refunds
-            &middot; Updated {{ summary.generated_at | date: 'shortTime' }}
-          </p>
-        </article>
+        }
       </div>
-    }
-  </section>
-
-  <!-- 2. Action-Needed Cards -->
-  <section aria-labelledby="actions-needed-heading" class="flex flex-col gap-3">
-    <h2 id="actions-needed-heading" class="font-serif-display text-lg font-bold text-ink">
-      Action Needed
-    </h2>
-
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <!-- Card 2a: Pending Seller Applications -->
-      @if (isSellersLoading()) {
-        <div
-          role="status"
-          aria-live="polite"
-          class="h-36 w-full animate-pulse rounded-xl border border-line bg-surface p-5"
-        >
-          <span class="sr-only">Loading pending seller applications...</span>
-          <div class="h-3.5 w-1/2 rounded bg-cream-100"></div>
-          <div class="mt-4 h-7 w-1/3 rounded bg-cream-100"></div>
-          <div class="mt-4 h-3 w-2/3 rounded bg-cream-100"></div>
-        </div>
-      } @else if (sellersError()) {
-        <div
-          role="alert"
-          class="flex flex-col justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-5"
-        >
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-red-900">
-              Pending seller applications
-            </h3>
-            <p class="mt-1.5 text-xs text-red-800">{{ sellersError() }}</p>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        @for (card of [1, 2]; track card) {
+          <div class="h-32 w-full animate-pulse rounded-xl border border-line bg-surface p-5">
+            <div class="h-3.5 w-1/3 rounded bg-cream-100"></div>
+            <div class="mt-4 h-10 w-full rounded bg-cream-100"></div>
           </div>
-          <button
-            type="button"
-            (click)="loadSellers()"
-            class="self-start cursor-pointer rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            Retry
-          </button>
+        }
+      </div>
+      <div class="rounded-xl border border-line bg-surface p-5">
+        <div class="space-y-2.5 py-2">
+          @for (row of [1, 2, 3, 4, 5]; track row) {
+            <div class="h-12 w-full animate-pulse rounded-lg bg-cream-100"></div>
+          }
         </div>
-      } @else {
+      </div>
+    </div>
+  } @else if (loadError()) {
+    <!-- Full-page Error State with Retry -->
+    <div
+      role="alert"
+      class="flex flex-col items-center justify-center gap-3 rounded-xl border border-red-200 bg-red-50 p-8 text-center"
+    >
+      <p class="text-sm font-medium text-red-800">{{ loadError() }}</p>
+      <button
+        type="button"
+        (click)="refreshAll()"
+        class="cursor-pointer rounded-md border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        Retry
+      </button>
+    </div>
+  } @else if (dashboard(); as data) {
+    <!-- 1. Revenue Summary Cards -->
+    <section aria-labelledby="revenue-heading" class="flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <h2 id="revenue-heading" class="font-serif-display text-lg font-bold text-ink">
+          Financial Summary
+        </h2>
+        <a
+          routerLink="/admin/reports"
+          class="rounded text-xs font-semibold text-terracotta hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          View revenue reports &rarr;
+        </a>
+      </div>
+
+      @if (revenueSummary(); as summary) {
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <!-- Gross Verified Payments -->
+          <article class="flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs">
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+                Gross verified payments
+              </h3>
+              <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-ink">
+                {{ summary.gross_verified_payments | currencyLkr }}
+              </p>
+            </div>
+            <p class="mt-3 text-xs text-ink-secondary">
+              {{ summary.verified_payment_count }}
+              {{ summary.verified_payment_count === 1 ? 'verified payment' : 'verified payments' }}
+              &middot; Updated {{ (summary.generated_at || data.generated_at) | date: 'shortTime' }}
+            </p>
+          </article>
+
+          <!-- Approved Refunds -->
+          <article class="flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs">
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+                Approved refunds
+              </h3>
+              <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-red-700">
+                {{ summary.total_refunds | currencyLkr }}
+              </p>
+            </div>
+            <p class="mt-3 text-xs text-ink-secondary">
+              {{ summary.refund_count }}
+              {{ summary.refund_count === 1 ? 'approved refund' : 'approved refunds' }}
+              &middot; Updated {{ (summary.generated_at || data.generated_at) | date: 'shortTime' }}
+            </p>
+          </article>
+
+          <!-- Net Revenue (Highlighted) -->
+          <article
+            class="flex flex-col justify-between rounded-xl border-2 border-terracotta bg-navy p-5 text-white shadow-xs md:col-span-2 lg:col-span-1"
+          >
+            <div>
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-cream-100/80">
+                  Net revenue
+                </h3>
+                <span class="rounded-full bg-terracotta px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                  Verified &minus; Refunds
+                </span>
+              </div>
+              <p class="mt-2 font-serif-display text-2xl font-bold tabular-nums text-white">
+                {{ summary.net_revenue | currencyLkr }}
+              </p>
+            </div>
+            <p class="mt-3 text-xs text-cream-100/80">
+              {{ summary.verified_payment_count }} payments, {{ summary.refund_count }} refunds
+              &middot; Updated {{ (summary.generated_at || data.generated_at) | date: 'shortTime' }}
+            </p>
+          </article>
+        </div>
+      }
+    </section>
+
+    <!-- 2. Action-Needed Cards -->
+    <section aria-labelledby="actions-needed-heading" class="flex flex-col gap-3">
+      <h2 id="actions-needed-heading" class="font-serif-display text-lg font-bold text-ink">
+        Action Needed
+      </h2>
+
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <!-- Card 2a: Pending Seller Applications -->
         <a
           routerLink="/admin/seller-approvals"
           class="group flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs transition hover:border-terracotta hover:bg-cream-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
@@ -206,40 +200,8 @@
             Review seller applications &rarr;
           </span>
         </a>
-      }
 
-      <!-- Card 2b: Pending Refunds -->
-      @if (isRefundsLoading()) {
-        <div
-          role="status"
-          aria-live="polite"
-          class="h-36 w-full animate-pulse rounded-xl border border-line bg-surface p-5"
-        >
-          <span class="sr-only">Loading pending refunds...</span>
-          <div class="h-3.5 w-1/2 rounded bg-cream-100"></div>
-          <div class="mt-4 h-7 w-1/3 rounded bg-cream-100"></div>
-          <div class="mt-4 h-3 w-2/3 rounded bg-cream-100"></div>
-        </div>
-      } @else if (refundsError()) {
-        <div
-          role="alert"
-          class="flex flex-col justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-5"
-        >
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-red-900">
-              Pending refunds
-            </h3>
-            <p class="mt-1.5 text-xs text-red-800">{{ refundsError() }}</p>
-          </div>
-          <button
-            type="button"
-            (click)="loadRefunds()"
-            class="self-start cursor-pointer rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            Retry
-          </button>
-        </div>
-      } @else {
+        <!-- Card 2b: Pending Refunds -->
         <a
           routerLink="/admin/refunds"
           class="group flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs transition hover:border-terracotta hover:bg-cream-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
@@ -285,40 +247,8 @@
             Manage refund requests &rarr;
           </span>
         </a>
-      }
 
-      <!-- Card 2c: Suspended Users -->
-      @if (isUsersLoading()) {
-        <div
-          role="status"
-          aria-live="polite"
-          class="h-36 w-full animate-pulse rounded-xl border border-line bg-surface p-5 md:col-span-2 lg:col-span-1"
-        >
-          <span class="sr-only">Loading suspended users...</span>
-          <div class="h-3.5 w-1/2 rounded bg-cream-100"></div>
-          <div class="mt-4 h-7 w-1/3 rounded bg-cream-100"></div>
-          <div class="mt-4 h-3 w-2/3 rounded bg-cream-100"></div>
-        </div>
-      } @else if (usersError()) {
-        <div
-          role="alert"
-          class="flex flex-col justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-5 md:col-span-2 lg:col-span-1"
-        >
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-red-900">
-              Suspended users
-            </h3>
-            <p class="mt-1.5 text-xs text-red-800">{{ usersError() }}</p>
-          </div>
-          <button
-            type="button"
-            (click)="loadUsers()"
-            class="self-start cursor-pointer rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            Retry
-          </button>
-        </div>
-      } @else {
+        <!-- Card 2c: Suspended Users -->
         <a
           routerLink="/admin/users"
           class="group flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs transition hover:border-terracotta hover:bg-cream-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring md:col-span-2 lg:col-span-1"
@@ -357,113 +287,190 @@
             View user accounts &rarr;
           </span>
         </a>
-      }
-    </div>
-  </section>
-
-  <!-- 3. Recent Activity (Audit Logs) -->
-  <section
-    aria-labelledby="recent-activity-heading"
-    class="rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6"
-  >
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3.5">
-      <div>
-        <h2 id="recent-activity-heading" class="font-serif-display text-xl font-bold text-ink">
-          Recent activity
-        </h2>
-        <p class="mt-0.5 text-xs text-ink-secondary">
-          Latest 5 entries recorded in the administrative audit trail
-        </p>
       </div>
+    </section>
 
-      <a
-        routerLink="/admin/audit-log"
-        class="inline-flex items-center rounded-md border border-line bg-cream-50 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        View all audit logs &rarr;
-      </a>
-    </div>
+    <!-- 3. Platform Breakdown Cards (Users by role & Categories) -->
+    <section aria-labelledby="platform-breakdown-heading" class="flex flex-col gap-3">
+      <h2 id="platform-breakdown-heading" class="font-serif-display text-lg font-bold text-ink">
+        Platform Breakdown
+      </h2>
 
-    @if (isAuditLoading()) {
-      <div role="status" aria-live="polite" class="space-y-2.5 py-4">
-        <span class="sr-only">Loading recent activity...</span>
-        @for (row of [1, 2, 3, 4, 5]; track row) {
-          <div class="h-12 w-full animate-pulse rounded-lg bg-cream-100"></div>
-        }
-      </div>
-    } @else if (auditError()) {
-      <div
-        role="alert"
-        class="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 p-6 text-center"
-      >
-        <p class="text-sm font-medium text-red-800">{{ auditError() }}</p>
-        <button
-          type="button"
-          (click)="loadRecentAuditLogs()"
-          class="cursor-pointer rounded-md border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          Retry
-        </button>
-      </div>
-    } @else if (recentAuditLogs().length === 0) {
-      <div class="py-8 text-center">
-        <p class="font-serif-display text-base font-bold text-ink">No recent audit activity</p>
-        <p class="mt-1 text-xs text-ink-secondary">
-          Administrative actions will appear here as soon as they are recorded.
-        </p>
-      </div>
-    } @else {
-      <ul class="divide-y divide-line" aria-label="Recent administrative audit log entries">
-        @for (entry of recentAuditLogs(); track entry.id) {
-          <li class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-1 last:pb-1">
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <span
-                  [attr.title]="entry.action"
-                  class="text-sm font-semibold text-ink"
-                >
-                  {{ formatActionLabel(entry.action) }}
-                </span>
-                <span class="rounded bg-cream-100 px-2 py-0.5 font-mono text-xs text-ink">
-                  {{ entry.target || '—' }}
-                </span>
-              </div>
-              <p class="mt-0.5 truncate text-xs text-ink-secondary">
-                By <span class="font-medium text-ink">{{ entry.actor_name || 'System' }}</span>
-                <span class="font-mono">({{ entry.actor_id }})</span>
-                @if (entry.details) {
-                  <span> &middot; {{ entry.details }}</span>
-                }
-              </p>
-            </div>
-
-            <div class="flex shrink-0 items-center gap-3">
-              <span class="text-xs text-ink-secondary">
-                @if (formatRelativeTime(entry.created_at); as rel) {
-                  {{ rel }}
-                } @else {
-                  {{ entry.created_at | date: 'short' }}
-                }
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <!-- Users by role -->
+        <article class="flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs">
+          <div>
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+                Users by role
+              </h3>
+              <span class="text-xs font-medium text-ink-secondary">
+                {{ userStats().total }} total &middot; {{ userStats().active }} active
               </span>
-
-              @if ((entry.outcome || '').toUpperCase() === 'FAILURE') {
-                <span
-                  class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800"
-                >
-                  FAILURE
-                </span>
-              } @else {
-                <span
-                  class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800"
-                >
-                  {{ (entry.outcome || 'SUCCESS').toUpperCase() }}
-                </span>
-              }
             </div>
-          </li>
-        }
-      </ul>
-    }
-  </section>
-</section>
 
+            <dl class="mt-3 grid grid-cols-3 gap-3">
+              <div class="rounded-lg border border-line bg-cream-50/70 px-3 py-2.5">
+                <dt class="text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">
+                  BUYER
+                </dt>
+                <dd class="mt-1 font-serif-display text-xl font-bold tabular-nums text-ink">
+                  {{ userStats().by_role.BUYER }}
+                </dd>
+              </div>
+              <div class="rounded-lg border border-line bg-cream-50/70 px-3 py-2.5">
+                <dt class="text-[11px] font-semibold uppercase tracking-wide text-terracotta-700">
+                  SELLER
+                </dt>
+                <dd class="mt-1 font-serif-display text-xl font-bold tabular-nums text-ink">
+                  {{ userStats().by_role.SELLER }}
+                </dd>
+              </div>
+              <div class="rounded-lg border border-line bg-cream-50/70 px-3 py-2.5">
+                <dt class="text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">
+                  ADMIN
+                </dt>
+                <dd class="mt-1 font-serif-display text-xl font-bold tabular-nums text-ink">
+                  {{ userStats().by_role.ADMIN }}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <a
+            routerLink="/admin/users"
+            class="mt-4 inline-flex items-center self-start text-xs font-semibold text-terracotta hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            Manage users &rarr;
+          </a>
+        </article>
+
+        <!-- Categories -->
+        <article class="flex flex-col justify-between rounded-xl border border-line bg-surface p-5 shadow-xs">
+          <div>
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-secondary">
+                Categories
+              </h3>
+              <span
+                class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800"
+              >
+                {{ categoryStats().active }} active
+              </span>
+            </div>
+
+            <dl class="mt-3 grid grid-cols-2 gap-3">
+              <div class="rounded-lg border border-line bg-cream-50/70 px-3 py-2.5">
+                <dt class="text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">
+                  Total categories
+                </dt>
+                <dd class="mt-1 font-serif-display text-xl font-bold tabular-nums text-ink">
+                  {{ categoryStats().total }}
+                </dd>
+              </div>
+              <div class="rounded-lg border border-line bg-cream-50/70 px-3 py-2.5">
+                <dt class="text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">
+                  Active in catalog
+                </dt>
+                <dd class="mt-1 font-serif-display text-xl font-bold tabular-nums text-emerald-800">
+                  {{ categoryStats().active }}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <a
+            routerLink="/admin/categories"
+            class="mt-4 inline-flex items-center self-start text-xs font-semibold text-terracotta hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            Manage categories &rarr;
+          </a>
+        </article>
+      </div>
+    </section>
+
+    <!-- 4. Recent Activity (Audit Logs) -->
+    <section
+      aria-labelledby="recent-activity-heading"
+      class="rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6"
+    >
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3.5">
+        <div>
+          <h2 id="recent-activity-heading" class="font-serif-display text-xl font-bold text-ink">
+            Recent activity
+          </h2>
+          <p class="mt-0.5 text-xs text-ink-secondary">
+            Latest 5 entries recorded in the administrative audit trail
+          </p>
+        </div>
+
+        <a
+          routerLink="/admin/audit-log"
+          class="inline-flex items-center rounded-md border border-line bg-cream-50 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          View all audit logs &rarr;
+        </a>
+      </div>
+
+      @if (recentAuditLogs().length === 0) {
+        <div class="py-8 text-center">
+          <p class="font-serif-display text-base font-bold text-ink">No recent audit activity</p>
+          <p class="mt-1 text-xs text-ink-secondary">
+            Administrative actions will appear here as soon as they are recorded.
+          </p>
+        </div>
+      } @else {
+        <ul class="divide-y divide-line" aria-label="Recent administrative audit log entries">
+          @for (entry of recentAuditLogs(); track entry.id) {
+            <li class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-1 last:pb-1">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span
+                    [attr.title]="entry.action"
+                    class="text-sm font-semibold text-ink"
+                  >
+                    {{ formatActionLabel(entry.action) }}
+                  </span>
+                  <span class="rounded bg-cream-100 px-2 py-0.5 font-mono text-xs text-ink">
+                    {{ entry.target || '—' }}
+                  </span>
+                </div>
+                <p class="mt-0.5 truncate text-xs text-ink-secondary">
+                  By <span class="font-medium text-ink">{{ entry.actor_name || 'System' }}</span>
+                  <span class="font-mono">({{ entry.actor_id }})</span>
+                  @if (entry.details) {
+                    <span> &middot; {{ entry.details }}</span>
+                  }
+                </p>
+              </div>
+
+              <div class="flex shrink-0 items-center gap-3">
+                <span class="text-xs text-ink-secondary">
+                  @if (formatRelativeTime(entry.created_at); as rel) {
+                    {{ rel }}
+                  } @else {
+                    {{ entry.created_at | date: 'short' }}
+                  }
+                </span>
+
+                @if ((entry.outcome || '').toUpperCase() === 'FAILURE') {
+                  <span
+                    class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800"
+                  >
+                    FAILURE
+                  </span>
+                } @else {
+                  <span
+                    class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800"
+                  >
+                    {{ (entry.outcome || 'SUCCESS').toUpperCase() }}
+                  </span>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  }
+</section>

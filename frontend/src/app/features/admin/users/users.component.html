@@ -168,7 +168,7 @@
       <div class="overflow-x-auto">
         <table class="block w-full border-collapse text-left md:table" aria-label="Platform users">
           <caption class="sr-only">
-            Platform users with name, email, role, status, registration date, and account status actions
+            Platform users with name, email, role, status, registration date, role change, and account status actions
           </caption>
           <thead class="hidden border-b border-line bg-cream-50 md:table-header-group">
             <tr>
@@ -249,42 +249,62 @@
                   <span>{{ user.created_at | date: 'mediumDate' }}</span>
                 </td>
 
-                <td class="mt-2 flex items-center justify-end gap-2 border-t border-line pt-2.5 md:mt-0 md:table-cell md:whitespace-nowrap md:border-0 md:px-4 md:py-3.5 md:text-right">
-                  @if (isProtectedUser(user)) {
-                    <span
-                      title="Administrator accounts cannot be suspended or modified"
-                      class="inline-block"
+                <td class="mt-2 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-2.5 md:mt-0 md:table-cell md:whitespace-nowrap md:border-0 md:px-4 md:py-3.5 md:text-right">
+                  <div class="inline-flex flex-wrap items-center justify-end gap-2">
+                    <!-- Change role select -->
+                    <select
+                      #roleSelect
+                      [value]="user.role.toUpperCase()"
+                      (change)="onUserRoleSelectChange(user, roleSelect.value, roleSelect)"
+                      [disabled]="isSelfUser(user) || updatingUserId() === user.id"
+                      [attr.aria-label]="'Change role for ' + user.name"
+                      [attr.title]="isSelfUser(user) ? 'Administrators cannot change their own role' : 'Change role'"
+                      class="cursor-pointer rounded-md border border-line bg-cream-50 px-2.5 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                     >
+                      @for (roleOpt of availableRoles; track roleOpt) {
+                        <option [value]="roleOpt" [selected]="user.role.toUpperCase() === roleOpt">
+                          {{ roleOpt }}
+                        </option>
+                      }
+                    </select>
+
+                    <!-- Status action (Protected / Activate / Suspend) -->
+                    @if (isProtectedUser(user)) {
+                      <span
+                        title="Administrator accounts cannot be suspended or modified"
+                        class="inline-block"
+                      >
+                        <button
+                          type="button"
+                          disabled
+                          [attr.aria-label]="'Cannot modify admin account ' + user.name"
+                          class="cursor-not-allowed rounded-md border border-line bg-cream-50 px-3 py-1.5 text-xs font-semibold text-ink-secondary opacity-50"
+                        >
+                          Protected
+                        </button>
+                      </span>
+                    } @else if (isSuspended(user)) {
                       <button
                         type="button"
-                        disabled
-                        [attr.aria-label]="'Cannot modify admin account ' + user.name"
-                        class="cursor-not-allowed rounded-md border border-line bg-cream-50 px-3 py-1.5 text-xs font-semibold text-ink-secondary opacity-50"
+                        (click)="activateUser(user)"
+                        [disabled]="updatingUserId() === user.id"
+                        [attr.aria-label]="'Activate ' + user.name"
+                        class="cursor-pointer rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Protected
+                        {{ updatingUserId() === user.id ? 'Updating...' : 'Activate' }}
                       </button>
-                    </span>
-                  } @else if (isSuspended(user)) {
-                    <button
-                      type="button"
-                      (click)="activateUser(user)"
-                      [disabled]="updatingUserId() === user.id"
-                      [attr.aria-label]="'Activate ' + user.name"
-                      class="cursor-pointer rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {{ updatingUserId() === user.id ? 'Updating...' : 'Activate' }}
-                    </button>
-                  } @else {
-                    <button
-                      type="button"
-                      (click)="requestSuspend(user, $event.currentTarget)"
-                      [disabled]="updatingUserId() === user.id"
-                      [attr.aria-label]="'Suspend ' + user.name"
-                      class="cursor-pointer rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Suspend
-                    </button>
-                  }
+                    } @else {
+                      <button
+                        type="button"
+                        (click)="requestSuspend(user, $event.currentTarget)"
+                        [disabled]="updatingUserId() === user.id"
+                        [attr.aria-label]="'Suspend ' + user.name"
+                        class="cursor-pointer rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Suspend
+                      </button>
+                    }
+                  </div>
                 </td>
               </tr>
             }
@@ -293,6 +313,52 @@
       </div>
     }
   </section>
+
+  <!-- Role Change Confirmation Modal Dialog -->
+  @if (pendingRoleChange(); as roleTarget) {
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/60 p-4"
+      (click)="!updatingUserId() && cancelRoleChange()"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="role-dialog-title"
+        aria-describedby="role-dialog-desc"
+        class="w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-xl"
+        (click)="$event.stopPropagation()"
+      >
+        <h2 id="role-dialog-title" class="font-serif-display text-xl font-bold text-ink">
+          Change {{ roleTarget.user.name }} from {{ roleTarget.fromRole }} to {{ roleTarget.toRole }}?
+        </h2>
+        <p id="role-dialog-desc" class="mt-2 text-sm text-ink-secondary">
+          Updating <strong class="font-semibold text-ink">{{ roleTarget.user.email }}</strong> to
+          <strong class="font-semibold text-ink">{{ roleTarget.toRole }}</strong> will take effect
+          immediately and record an entry in the administrative audit trail.
+        </p>
+
+        <div class="mt-6 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            (click)="cancelRoleChange()"
+            [disabled]="updatingUserId() !== null"
+            class="cursor-pointer rounded-md border border-line bg-cream-50 px-4 py-2 text-sm font-semibold text-ink hover:bg-cream-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            #confirmRoleBtn
+            type="button"
+            (click)="confirmRoleChange()"
+            [disabled]="updatingUserId() !== null"
+            class="cursor-pointer rounded-md bg-terracotta px-4 py-2 text-sm font-semibold text-white transition hover:bg-terracotta-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {{ updatingUserId() ? 'Updating...' : 'Confirm role change' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 
   <!-- Suspend Confirmation Modal Dialog -->
   @if (pendingSuspendUser(); as target) {

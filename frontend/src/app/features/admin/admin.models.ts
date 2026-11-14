@@ -18,6 +18,12 @@ export interface UpdateUserStatusPayload {
   reason?: string;
 }
 
+export type UserRole = 'BUYER' | 'SELLER' | 'ADMIN';
+
+export interface UpdateUserRolePayload {
+  role: UserRole;
+}
+
 export interface SellerApplication {
   id: string;
   user_id: string;
@@ -103,4 +109,44 @@ export interface AuditLog {
   request_id: string;
   details: string;
   created_at: string;
+}
+
+export interface DashboardUserRoleCounts {
+  BUYER: number;
+  SELLER: number;
+  ADMIN: number;
+}
+
+export interface DashboardUserStats {
+  total: number;
+  active: number;
+  suspended: number;
+  by_role: DashboardUserRoleCounts;
+}
+
+export interface DashboardSellerStats {
+  pending: number;
+  approved: number;
+  rejected: number;
+  suspended: number;
+}
+
+export interface DashboardRefundStats {
+  pending_count: number;
+  pending_amount: number;
+}
+
+export interface DashboardCategoryStats {
+  total: number;
+  active: number;
+}
+
+export interface DashboardSummary {
+  users: DashboardUserStats;
+  sellers: DashboardSellerStats;
+  refunds: DashboardRefundStats;
+  categories: DashboardCategoryStats;
+  revenue: RevenueSummary;
+  recent_activity: AuditLog[];
+  generated_at: string;
 }

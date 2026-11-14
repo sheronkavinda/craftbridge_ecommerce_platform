@@ -8,12 +8,14 @@ import {
   Category,
   CategoryPayload,
   DailyRevenuePoint,
+  DashboardSummary,
   RefundRecord,
   RevenueSummary,
   SellerApplication,
   SellerSalesReport,
   UpdateRefundStatusPayload,
   UpdateSellerStatusPayload,
+  UpdateUserRolePayload,
   UpdateUserStatusPayload,
   UserSummary,
 } from './admin.models';
@@ -25,10 +27,18 @@ export class AdminService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = environment.apiBaseUrl;
 
-  listUsers(role = '', status = '', limit = 50, offset = 0): Observable<UserSummary[]> {
+  getDashboardSummary(): Observable<DashboardSummary> {
+    return this.http
+      .get<ApiResponse<DashboardSummary>>(`${this.baseUrl}/admin/dashboard`)
+      .pipe(map((res) => res.data));
+  }
+
+  listUsers(role = '', status = '', q = '', limit = 50, offset = 0): Observable<UserSummary[]> {
     let params = new HttpParams().set('limit', limit).set('offset', offset);
     if (role) params = params.set('role', role);
     if (status) params = params.set('status', status);
+    const trimmedQ = q.trim();
+    if (trimmedQ) params = params.set('q', trimmedQ);
 
     return this.http
       .get<ApiResponse<UserSummary[]>>(`${this.baseUrl}/admin/users`, { params })
@@ -38,6 +48,12 @@ export class AdminService {
   updateUserStatus(userId: string, payload: UpdateUserStatusPayload): Observable<UserSummary> {
     return this.http
       .patch<ApiResponse<UserSummary>>(`${this.baseUrl}/admin/users/${encodeURIComponent(userId)}/status`, payload)
+      .pipe(map((res) => res.data));
+  }
+
+  updateUserRole(userId: string, payload: UpdateUserRolePayload): Observable<UserSummary> {
+    return this.http
+      .patch<ApiResponse<UserSummary>>(`${this.baseUrl}/admin/users/${encodeURIComponent(userId)}/roles`, payload)
       .pipe(map((res) => res.data));
   }
 
