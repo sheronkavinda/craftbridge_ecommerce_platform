@@ -10,13 +10,20 @@ import (
 
 var ErrInvalidDateRange = errors.New("invalid date range")
 
+// RepositoryStore defines the persistence contract required by the report service.
+type RepositoryStore interface {
+	GetRevenueSummary(ctx context.Context, filter DateRangeFilter) (*RevenueSummary, error)
+	GetDailyRevenueBreakdown(ctx context.Context, filter DateRangeFilter) ([]DailyRevenuePoint, error)
+	GetSellerRevenueReport(ctx context.Context, filter DateRangeFilter) ([]SellerSalesReport, error)
+}
+
 // Service provides business logic and validation for platform sales and revenue reports.
 type Service struct {
-	repo *Repository
+	repo RepositoryStore
 }
 
 // NewService creates a new report service.
-func NewService(repo *Repository) *Service {
+func NewService(repo RepositoryStore) *Service {
 	return &Service{repo: repo}
 }
 

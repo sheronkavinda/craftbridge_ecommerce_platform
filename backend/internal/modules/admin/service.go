@@ -6,9 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"html"
 	"strings"
 	"time"
+	"unicode"
 
 	"craftbridge/backend/internal/modules/audit"
 )
@@ -18,14 +18,28 @@ var (
 	ErrForbiddenIDOR = errors.New("forbidden operation on target resource")
 )
 
+// RepositoryStore defines the persistence contract required by the admin service.
+type RepositoryStore interface {
+	ListUsers(ctx context.Context, role, status string, limit, offset int) ([]UserSummary, error)
+	UpdateUserStatus(ctx context.Context, userID, status string) (*UserSummary, error)
+	ListSellerApplications(ctx context.Context, status string, limit, offset int) ([]SellerApplication, error)
+	UpdateSellerStatus(ctx context.Context, sellerID, status, notes string) (*SellerApplication, error)
+	ListRefunds(ctx context.Context, status string, limit, offset int) ([]RefundRecord, error)
+	UpdateRefundStatus(ctx context.Context, refundID, status, reason string) (*RefundRecord, error)
+	ListCategories(ctx context.Context) ([]Category, error)
+	CreateCategory(ctx context.Context, categoryID, name, slug, description string, isActive bool) (*Category, error)
+	UpdateCategory(ctx context.Context, categoryID, name, slug, description string, isActive bool) (*Category, error)
+	DeleteCategory(ctx context.Context, categoryID string) error
+}
+
 // Service implements business rules, input sanitization, IDOR checks, and automated audit logging.
 type Service struct {
-	repo         *Repository
+	repo         RepositoryStore
 	auditService *audit.Service
 }
 
 // NewService constructs a new admin service.
-func NewService(repo *Repository, auditService *audit.Service) *Service {
+func NewService(repo RepositoryStore, auditService *audit.Service) *Service {
 	return &Service{
 		repo:         repo,
 		auditService: auditService,
@@ -110,8 +124,7 @@ func (s *Service) UpdateSellerStatus(ctx context.Context, actorID, actorName, re
 		return nil, fmt.Errorf("%w: status must be PENDING, APPROVED, REJECTED, or SUSPENDED", ErrInvalidInput)
 	}
 
-	rawNotes := truncateRunes(input.Notes, 512)
-	cleanNotes := html.EscapeString(rawNotes)
+	cleanNotes := sanitizeInput(input.Notes, 512)
 	seller, err := s.repo.UpdateSellerStatus(ctx, sellerID, normalizedStatus, cleanNotes)
 	if err != nil {
 		s.recordAudit(ctx, actorID, actorName, "SELLER_STATUS_UPDATE", "seller:"+sellerID, "FAILURE", requestID, err.Error())
@@ -119,8 +132,8 @@ func (s *Service) UpdateSellerStatus(ctx context.Context, actorID, actorName, re
 	}
 
 	details := fmt.Sprintf("seller status transitioned to %s", normalizedStatus)
-	if rawNotes != "" {
-		details += " | notes: " + rawNotes
+	if cleanNotes != "" {
+		details += " | notes: " + cleanNotes
 	}
 	s.recordAudit(ctx, actorID, actorName, "SELLER_STATUS_UPDATE", "seller:"+sellerID, "SUCCESS", requestID, details)
 
@@ -152,8 +165,7 @@ func (s *Service) UpdateRefundStatus(ctx context.Context, actorID, actorName, re
 		return nil, fmt.Errorf("%w: refund status must be APPROVED, REJECTED, or PROCESSED", ErrInvalidInput)
 	}
 
-	rawReason := truncateRunes(input.Reason, 512)
-	cleanReason := html.EscapeString(rawReason)
+	cleanReason := sanitizeInput(input.Reason, 512)
 	refund, err := s.repo.UpdateRefundStatus(ctx, refundID, normalizedStatus, cleanReason)
 	if err != nil {
 		s.recordAudit(ctx, actorID, actorName, "REFUND_STATUS_UPDATE", "refund:"+refundID, "FAILURE", requestID, err.Error())
@@ -161,8 +173,8 @@ func (s *Service) UpdateRefundStatus(ctx context.Context, actorID, actorName, re
 	}
 
 	details := fmt.Sprintf("refund %s (order %s, amount %.2f)", normalizedStatus, refund.OrderID, refund.Amount)
-	if rawReason != "" {
-		details += " | reason: " + rawReason
+	if cleanReason != "" {
+		details += " | reason: " + cleanReason
 	}
 	s.recordAudit(ctx, actorID, actorName, "REFUND_STATUS_UPDATE", "refund:"+refundID, "SUCCESS", requestID, details)
 
@@ -177,15 +189,14 @@ func (s *Service) ListCategories(ctx context.Context) ([]Category, error) {
 // CreateCategory sanitizes inputs, generates a unique category ID, creates the category, and records an immutable audit log entry.
 func (s *Service) CreateCategory(ctx context.Context, actorID, actorName, requestID string, input CategoryInput) (*Category, error) {
 	ctx = WithRequestID(ctx, requestID)
-	rawName := truncateRunes(input.Name, 120)
-	name := html.EscapeString(rawName)
+	name := sanitizeInput(input.Name, 120)
 	if name == "" {
 		return nil, fmt.Errorf("%w: category name is required", ErrInvalidInput)
 	}
 
 	slug := slugify(input.Slug)
 	if slug == "" {
-		slug = slugify(rawName)
+		slug = slugify(name)
 	}
 	if slug == "" {
 		return nil, fmt.Errorf("%w: valid category slug is required", ErrInvalidInput)
@@ -204,7 +215,7 @@ func (s *Service) CreateCategory(ctx context.Context, actorID, actorName, reques
 		return nil, err
 	}
 
-	s.recordAudit(ctx, actorID, actorName, "CATEGORY_CREATE", "category:"+category.ID, "SUCCESS", requestID, "created category "+rawName)
+	s.recordAudit(ctx, actorID, actorName, "CATEGORY_CREATE", "category:"+category.ID, "SUCCESS", requestID, "created category "+name)
 	return category, nil
 }
 
@@ -215,15 +226,14 @@ func (s *Service) UpdateCategory(ctx context.Context, actorID, actorName, reques
 		return nil, err
 	}
 
-	rawName := truncateRunes(input.Name, 120)
-	name := html.EscapeString(rawName)
+	name := sanitizeInput(input.Name, 120)
 	if name == "" {
 		return nil, fmt.Errorf("%w: category name is required", ErrInvalidInput)
 	}
 
 	slug := slugify(input.Slug)
 	if slug == "" {
-		slug = slugify(rawName)
+		slug = slugify(name)
 	}
 	if slug == "" {
 		return nil, fmt.Errorf("%w: valid category slug is required", ErrInvalidInput)
@@ -241,7 +251,7 @@ func (s *Service) UpdateCategory(ctx context.Context, actorID, actorName, reques
 		return nil, err
 	}
 
-	s.recordAudit(ctx, actorID, actorName, "CATEGORY_UPDATE", "category:"+category.ID, "SUCCESS", requestID, "updated category "+rawName)
+	s.recordAudit(ctx, actorID, actorName, "CATEGORY_UPDATE", "category:"+category.ID, "SUCCESS", requestID, "updated category "+name)
 	return category, nil
 }
 
@@ -297,8 +307,17 @@ func validateResourceID(id string) error {
 	return nil
 }
 
+func stripControlChars(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, value)
+}
+
 func truncateRunes(value string, maxRunes int) string {
-	trimmed := strings.TrimSpace(value)
+	trimmed := strings.TrimSpace(stripControlChars(value))
 	if maxRunes > 0 {
 		runes := []rune(trimmed)
 		if len(runes) > maxRunes {
@@ -309,7 +328,52 @@ func truncateRunes(value string, maxRunes int) string {
 }
 
 func sanitizeInput(value string, maxRunes int) string {
-	return html.EscapeString(truncateRunes(value, maxRunes))
+	return truncateRunes(value, maxRunes)
+}
+
+func foldLatinRune(r rune) rune {
+	switch r {
+	case 'à', 'á', 'â', 'ã', 'ä', 'å', 'ā', 'ă', 'ą':
+		return 'a'
+	case 'ç', 'ć', 'č', 'ĉ', 'ċ':
+		return 'c'
+	case 'ď', 'đ':
+		return 'd'
+	case 'è', 'é', 'ê', 'ë', 'ē', 'ĕ', 'ė', 'ę', 'ě':
+		return 'e'
+	case 'ĝ', 'ğ', 'ġ', 'ģ':
+		return 'g'
+	case 'ĥ', 'ħ':
+		return 'h'
+	case 'ì', 'í', 'î', 'ï', 'ĩ', 'ī', 'ĭ', 'į', 'ı':
+		return 'i'
+	case 'ĵ':
+		return 'j'
+	case 'ķ':
+		return 'k'
+	case 'ĺ', 'ļ', 'ľ', 'ŀ', 'ł':
+		return 'l'
+	case 'ñ', 'ń', 'ņ', 'ň':
+		return 'n'
+	case 'ò', 'ó', 'ô', 'õ', 'ö', 'ø', 'ō', 'ŏ', 'ő':
+		return 'o'
+	case 'ŕ', 'ŗ', 'ř':
+		return 'r'
+	case 'ś', 'ŝ', 'ş', 'š':
+		return 's'
+	case 'ţ', 'ť', 'ŧ':
+		return 't'
+	case 'ù', 'ú', 'û', 'ü', 'ũ', 'ū', 'ŭ', 'ů', 'ű', 'ų':
+		return 'u'
+	case 'ŵ':
+		return 'w'
+	case 'ý', 'ÿ', 'ŷ':
+		return 'y'
+	case 'ź', 'ż', 'ž':
+		return 'z'
+	default:
+		return r
+	}
 }
 
 func slugify(value string) string {
@@ -317,6 +381,7 @@ func slugify(value string) string {
 	var b strings.Builder
 	prevHyphen := false
 	for _, r := range lower {
+		r = foldLatinRune(r)
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
 			prevHyphen = false

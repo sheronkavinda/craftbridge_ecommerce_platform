@@ -3,19 +3,25 @@ package audit
 import (
 	"context"
 	"errors"
-	"html"
 	"strings"
+	"unicode"
 )
 
 var ErrInvalidAuditInput = errors.New("invalid audit log input")
 
+// RepositoryStore defines the persistence contract required by the audit service.
+type RepositoryStore interface {
+	Create(ctx context.Context, input CreateAuditLogInput) (*AuditLog, error)
+	List(ctx context.Context, filter ListAuditLogsFilter) ([]AuditLog, error)
+}
+
 // Service provides business logic for recording and querying append-only audit logs.
 type Service struct {
-	repo *Repository
+	repo RepositoryStore
 }
 
 // NewService creates a new audit service.
-func NewService(repo *Repository) *Service {
+func NewService(repo RepositoryStore) *Service {
 	return &Service{repo: repo}
 }
 
@@ -54,12 +60,18 @@ func (s *Service) ListLogs(ctx context.Context, filter ListAuditLogsFilter) ([]A
 }
 
 func sanitizeText(val string, maxRunes int) string {
-	trimmed := strings.TrimSpace(val)
+	cleaned := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, val)
+	trimmed := strings.TrimSpace(cleaned)
 	if maxRunes > 0 {
 		runes := []rune(trimmed)
 		if len(runes) > maxRunes {
-			trimmed = string(runes[:maxRunes])
+			return string(runes[:maxRunes])
 		}
 	}
-	return html.EscapeString(trimmed)
+	return trimmed
 }
