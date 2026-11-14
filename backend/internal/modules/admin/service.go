@@ -42,7 +42,7 @@ func (s *Service) ListUsers(ctx context.Context, role, status string, limit, off
 	}
 	return s.repo.ListUsers(
 		ctx,
-		sanitizeInput(role, 32),
+		strings.ToUpper(sanitizeInput(role, 32)),
 		strings.ToUpper(sanitizeInput(status, 32)),
 		limit,
 		offset,

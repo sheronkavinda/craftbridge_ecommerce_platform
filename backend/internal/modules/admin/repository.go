@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	ErrNotFound           = errors.New("record not found")
-	ErrCategorySlugExists = errors.New("category slug already exists")
+	ErrNotFound             = errors.New("record not found")
+	ErrCategorySlugExists   = errors.New("category slug already exists")
+	ErrRefundAlreadyDecided = errors.New("refund has already been decided")
 )
 
 type ctxKeyRequestID struct{}
@@ -103,10 +104,20 @@ func (r *Repository) UpdateUserStatus(ctx context.Context, userID, status string
 // ListSellerApplications fetches seller applications filtered by approval status.
 func (r *Repository) ListSellerApplications(ctx context.Context, status string, limit, offset int) ([]SellerApplication, error) {
 	const query = `
-		SELECT id::text, user_id::text, store_name, status, COALESCE(notes, ''), created_at, reviewed_at
-		FROM sellers
-		WHERE ($1 = '' OR status = $1)
-		ORDER BY created_at DESC
+		SELECT
+			s.id::text,
+			s.user_id::text,
+			COALESCE(u.name, ''),
+			COALESCE(u.email, ''),
+			s.store_name,
+			s.status,
+			COALESCE(s.notes, ''),
+			s.created_at,
+			s.reviewed_at
+		FROM sellers s
+		LEFT JOIN users u ON u.id::text = s.user_id::text
+		WHERE ($1 = '' OR s.status = $1)
+		ORDER BY s.created_at DESC
 		LIMIT $2 OFFSET $3
 	`
 
@@ -120,7 +131,7 @@ func (r *Repository) ListSellerApplications(ctx context.Context, status string, 
 	sellers := make([]SellerApplication, 0)
 	for rows.Next() {
 		var s SellerApplication
-		if err := rows.Scan(&s.ID, &s.UserID, &s.StoreName, &s.Status, &s.Notes, &s.SubmittedAt, &s.ReviewedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.UserID, &s.UserName, &s.UserEmail, &s.StoreName, &s.Status, &s.Notes, &s.SubmittedAt, &s.ReviewedAt); err != nil {
 			log.Printf("[req_id=%s] repository.ListSellerApplications scan error: %v", reqIDFromContext(ctx), err)
 			return nil, fmt.Errorf("failed to scan seller application row: %w", err)
 		}
@@ -138,15 +149,24 @@ func (r *Repository) ListSellerApplications(ctx context.Context, status string, 
 // UpdateSellerStatus transitions a seller application status (APPROVED, REJECTED, SUSPENDED).
 func (r *Repository) UpdateSellerStatus(ctx context.Context, sellerID, status, notes string) (*SellerApplication, error) {
 	const query = `
-		UPDATE sellers
+		UPDATE sellers s
 		SET status = $2, notes = $3, reviewed_at = NOW(), updated_at = NOW()
-		WHERE id::text = $1
-		RETURNING id::text, user_id::text, store_name, status, COALESCE(notes, ''), created_at, reviewed_at
+		WHERE s.id::text = $1
+		RETURNING
+			s.id::text,
+			s.user_id::text,
+			COALESCE((SELECT u.name FROM users u WHERE u.id::text = s.user_id::text), ''),
+			COALESCE((SELECT u.email FROM users u WHERE u.id::text = s.user_id::text), ''),
+			s.store_name,
+			s.status,
+			COALESCE(s.notes, ''),
+			s.created_at,
+			s.reviewed_at
 	`
 
 	var s SellerApplication
 	err := r.db.QueryRow(ctx, query, sellerID, status, notes).Scan(
-		&s.ID, &s.UserID, &s.StoreName, &s.Status, &s.Notes, &s.SubmittedAt, &s.ReviewedAt,
+		&s.ID, &s.UserID, &s.UserName, &s.UserEmail, &s.StoreName, &s.Status, &s.Notes, &s.SubmittedAt, &s.ReviewedAt,
 	)
 	if err != nil {
 		log.Printf("[req_id=%s] repository.UpdateSellerStatus error (seller_id=%s): %v", reqIDFromContext(ctx), sellerID, err)
@@ -194,12 +214,12 @@ func (r *Repository) ListRefunds(ctx context.Context, status string, limit, offs
 	return refunds, nil
 }
 
-// UpdateRefundStatus approves or rejects a refund request using parameterized queries.
+// UpdateRefundStatus approves or rejects a PENDING refund request using parameterized queries.
 func (r *Repository) UpdateRefundStatus(ctx context.Context, refundID, status, reason string) (*RefundRecord, error) {
 	const query = `
 		UPDATE refunds
 		SET status = $2, reason = COALESCE(NULLIF($3, ''), reason), reviewed_at = NOW(), updated_at = NOW()
-		WHERE id::text = $1
+		WHERE id::text = $1 AND status = 'PENDING'
 		RETURNING id::text, order_id::text, amount::float8, status, COALESCE(reason, ''), created_at, reviewed_at
 	`
 
@@ -210,6 +230,11 @@ func (r *Repository) UpdateRefundStatus(ctx context.Context, refundID, status, r
 	if err != nil {
 		log.Printf("[req_id=%s] repository.UpdateRefundStatus error (refund_id=%s): %v", reqIDFromContext(ctx), refundID, err)
 		if errors.Is(err, pgx.ErrNoRows) {
+			var exists bool
+			checkErr := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM refunds WHERE id::text = $1)`, refundID).Scan(&exists)
+			if checkErr == nil && exists {
+				return nil, ErrRefundAlreadyDecided
+			}
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to update refund status: %w", err)

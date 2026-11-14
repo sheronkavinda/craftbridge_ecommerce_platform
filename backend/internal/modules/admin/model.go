@@ -22,6 +22,8 @@ type UpdateUserStatusInput struct {
 type SellerApplication struct {
 	ID          string     `json:"id"`
 	UserID      string     `json:"user_id"`
+	UserName    string     `json:"user_name"`
+	UserEmail   string     `json:"user_email"`
 	StoreName   string     `json:"store_name"`
 	Status      string     `json:"status"`
 	Notes       string     `json:"notes"`

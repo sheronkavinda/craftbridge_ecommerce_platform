@@ -164,7 +164,11 @@ func (r *Repository) GetSellerRevenueReport(ctx context.Context, filter DateRang
 		SELECT
 			s.id::text AS seller_id,
 			s.store_name,
-			COUNT(DISTINCT o.id)::bigint AS order_count,
+			COUNT(DISTINCT CASE
+				WHEN ($1::timestamptz IS NULL OR o.created_at >= $1)
+				 AND ($2::timestamptz IS NULL OR o.created_at <= $2)
+				THEN o.id
+			END)::bigint AS order_count,
 			COALESCE(SUM(op.verified_amount), 0)::float8 AS verified_payments,
 			COALESCE(SUM(orf.refund_amount), 0)::float8 AS refunds,
 			(

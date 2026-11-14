@@ -408,6 +408,8 @@ const openAPISpecJSON = `{
         "properties": {
           "id": { "type": "string", "example": "sel-201" },
           "user_id": { "type": "string", "example": "usr-201" },
+          "user_name": { "type": "string", "example": "Sunil Craftsman" },
+          "user_email": { "type": "string", "example": "sunil@craftbridge.test" },
           "store_name": { "type": "string", "example": "Artisan Clay Studio" },
           "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "SUSPENDED"], "example": "PENDING" },
           "notes": { "type": "string", "example": "Verified business registration" },
@@ -784,7 +786,8 @@ const openAPISpecJSON = `{
         },
         "responses": {
           "200": { "description": "Refund status updated and audit logged" },
-          "404": { "description": "Refund not found" }
+          "404": { "description": "Refund not found" },
+          "409": { "description": "refund has already been decided" }
         }
       },
       "patch": {
@@ -805,7 +808,9 @@ const openAPISpecJSON = `{
           }
         },
         "responses": {
-          "200": { "description": "Refund status updated and audit logged" }
+          "200": { "description": "Refund status updated and audit logged" },
+          "404": { "description": "Refund not found" },
+          "409": { "description": "refund has already been decided" }
         }
       }
     },
