@@ -1,0 +1,314 @@
+
+<app-header />
+
+<main class="min-h-screen bg-[#FAF7F2]">
+  <!-- Hero Banner -->
+  <section class="relative h-[300px] overflow-hidden bg-[#14213A] sm:h-[380px]">
+    @if (artisan()?.banner; as banner) {
+      <img
+        [src]="banner"
+        alt="Artisan storefront banner"
+        class="absolute inset-0 h-full w-full object-cover"
+      />
+    }
+
+    <div class="absolute inset-0 bg-[#14213A]/60"></div>
+
+    <div class="relative mx-auto flex h-full max-w-7xl items-center px-6">
+      <div class="max-w-2xl text-white">
+        <p class="mb-4 text-xs font-semibold uppercase tracking-[0.3em]">
+          Discover the Art of Handmade
+        </p>
+
+        <h1 class="font-serif text-4xl font-bold leading-tight sm:text-6xl">
+          Crafted with Love,<br />
+          Made to Last.
+        </h1>
+
+        <p class="mt-5 max-w-lg text-sm leading-7 text-white/90 sm:text-base">
+          Discover unique handmade creations from talented artisans.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+
+    <!-- Breadcrumb -->
+    <nav aria-label="Breadcrumb" class="mb-8 text-sm text-gray-500">
+      <a routerLink="/shop" class="hover:text-[#B6502C]">Shop</a>
+      <span class="mx-2">/</span>
+      <span>Artisans</span>
+
+      @if (artisan(); as profile) {
+        <span class="mx-2">/</span>
+        <span class="font-medium text-[#B6502C]">
+          {{ profile.name }}
+        </span>
+      }
+    </nav>
+
+    <!-- Loading -->
+    @if (loading()) {
+      <section
+        role="status"
+        class="rounded-2xl border border-[#E8E1D8] bg-white p-12 text-center"
+      >
+        <div
+          class="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-[#E8E1D8] border-t-[#B6502C]"
+        ></div>
+
+        <p class="mt-5 text-sm text-gray-600">
+          Loading artisan storefront...
+        </p>
+      </section>
+
+    } @else if (error()) {
+
+      <!-- Error -->
+      <section
+        role="alert"
+        class="rounded-2xl border border-red-200 bg-white p-10 text-center"
+      >
+        <h2 class="text-xl font-semibold text-[#14213A]">
+          Unable to load storefront
+        </h2>
+
+        <p class="mt-3 text-sm text-gray-600">
+          {{ error() }}
+        </p>
+
+        <a
+          routerLink="/shop"
+          class="mt-6 inline-flex rounded-lg bg-[#B6502C] px-6 py-3 text-sm font-semibold text-white"
+        >
+          Back to Shop
+        </a>
+      </section>
+
+    } @else if (artisan(); as profile) {
+
+      <!-- Artisan Profile -->
+      <section class="rounded-2xl border border-[#E8E1D8] bg-white p-6 shadow-sm sm:p-8">
+        <div class="flex flex-col gap-6 sm:flex-row sm:items-center">
+
+          @if (profile.logo) {
+            <img
+              [src]="profile.logo"
+              [alt]="profile.name"
+              class="h-28 w-28 rounded-full border-4 border-[#F5EBDD] object-cover"
+            />
+          } @else {
+            <div
+              class="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[#F5EBDD] text-4xl font-bold text-[#B6502C]"
+              aria-hidden="true"
+            >
+              {{ profile.name.charAt(0) }}
+            </div>
+          }
+
+          <div class="flex-1">
+            <div class="flex flex-wrap items-center gap-3">
+              <h2 class="font-serif text-3xl font-bold text-[#14213A]">
+                {{ profile.name }}
+              </h2>
+
+              @if (profile.verified) {
+                <span class="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+                  Verified Artisan
+                </span>
+              }
+            </div>
+
+            <p class="mt-2 text-sm text-gray-500">
+              {{ profile.location }}
+            </p>
+
+            <div class="mt-3 flex flex-wrap items-center gap-5 text-sm">
+              @if (profile.rating !== null) {
+                <span class="font-semibold text-[#D69A32]">
+                  Rating: {{ profile.rating }} / 5
+                </span>
+              }
+
+              <span class="text-gray-500">
+                {{ profile.reviewCount }} Reviews
+              </span>
+
+              <span class="text-gray-500">
+                {{ profile.productCount }} Products
+              </span>
+            </div>
+
+            <p class="mt-4 max-w-2xl text-sm leading-7 text-gray-600">
+              {{ profile.description }}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Store Tabs -->
+      <section class="mt-10 border-b border-[#E8E1D8]">
+        <nav aria-label="Storefront sections" class="flex gap-8 overflow-x-auto">
+          @for (tab of tabs; track tab) {
+            <button
+              type="button"
+              (click)="selectTab(tab)"
+              class="whitespace-nowrap border-b-2 px-2 py-4 text-sm font-semibold transition"
+              [class.border-[#B6502C]]="selectedTab() === tab"
+              [class.text-[#B6502C]]="selectedTab() === tab"
+              [class.border-transparent]="selectedTab() !== tab"
+              [class.text-gray-500]="selectedTab() !== tab"
+              [attr.aria-current]="selectedTab() === tab ? 'page' : null"
+            >
+              {{ tab }}
+            </button>
+          }
+        </nav>
+      </section>
+
+      <!-- Products -->
+      @if (selectedTab() === 'Products') {
+        <section class="py-10">
+          <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#B6502C]">
+                The Collection
+              </p>
+
+              <h2 class="mt-3 font-serif text-3xl font-bold text-[#14213A]">
+                Handmade Treasures
+              </h2>
+
+              <p class="mt-2 text-sm text-gray-500">
+                Discover unique creations from {{ profile.name }}.
+              </p>
+            </div>
+
+            <span class="text-sm text-gray-500">
+              {{ products().length }} Products
+            </span>
+          </div>
+
+          @if (products().length > 0) {
+            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              @for (product of products(); track product.id) {
+                <app-product-card [product]="product" />
+              }
+            </div>
+          } @else {
+            <div class="rounded-2xl border border-[#E8E1D8] bg-white px-6 py-16 text-center">
+              <h3 class="text-lg font-semibold text-[#14213A]">
+                No products available
+              </h3>
+
+              <p class="mt-3 text-sm text-gray-500">
+                This artisan has no published products to display.
+              </p>
+            </div>
+          }
+        </section>
+      }
+
+      <!-- Our Story -->
+      @if (selectedTab() === 'Our Story') {
+        <section class="py-12">
+          <h2 class="font-serif text-3xl font-bold text-[#14213A]">
+            Our Story
+          </h2>
+
+          <div class="mt-6 max-w-3xl rounded-2xl border border-[#E8E1D8] bg-white p-7">
+            @if (profile.story) {
+              <p class="whitespace-pre-line text-sm leading-8 text-gray-600">
+                {{ profile.story }}
+              </p>
+            } @else {
+              <p class="text-sm text-gray-500">
+                This artisan has not shared their story yet.
+              </p>
+            }
+          </div>
+        </section>
+      }
+
+      <!-- Reviews -->
+      @if (selectedTab() === 'Reviews') {
+        <section class="py-12">
+          <h2 class="font-serif text-3xl font-bold text-[#14213A]">
+            Customer Reviews
+          </h2>
+
+          <div class="mt-6 rounded-2xl border border-[#E8E1D8] bg-white p-8">
+            @if (profile.rating !== null && profile.reviewCount > 0) {
+              <div class="text-3xl font-bold text-[#D69A32]">
+                {{ profile.rating }} / 5
+              </div>
+
+              <p class="mt-2 text-sm text-gray-500">
+                Based on {{ profile.reviewCount }} reviews.
+              </p>
+            } @else {
+              <p class="text-sm text-gray-500">
+                No review summary is available yet.
+              </p>
+            }
+
+            <p class="mt-6 text-sm text-gray-500">
+              Individual customer reviews will appear here when the Reviews API is available.
+            </p>
+          </div>
+        </section>
+      }
+
+      <!-- Policies -->
+      @if (selectedTab() === 'Policies') {
+        <section class="py-12">
+          <h2 class="font-serif text-3xl font-bold text-[#14213A]">
+            Store Policies
+          </h2>
+
+          <div class="mt-6 rounded-2xl border border-[#E8E1D8] bg-white p-8">
+            <p class="text-sm text-gray-500">
+              Store policies will be displayed when provided by the seller.
+            </p>
+          </div>
+        </section>
+      }
+
+      <!-- Support Artisan -->
+      <section class="mt-8 rounded-2xl bg-[#F0E8DD] px-6 py-12 text-center sm:px-10">
+        <h2 class="font-serif text-2xl font-bold text-[#14213A] sm:text-3xl">
+          Support Local Artisans
+        </h2>
+
+        <p class="mx-auto mt-4 max-w-xl text-sm leading-7 text-gray-600">
+          Explore handmade products and support independent creators.
+        </p>
+
+        <a
+          routerLink="/shop"
+          class="mt-7 inline-flex rounded-lg bg-[#B6502C] px-8 py-3 text-sm font-semibold text-white transition hover:bg-[#994022]"
+        >
+          Explore More Products
+        </a>
+      </section>
+
+    } @else {
+
+      <!-- No Artisan Data -->
+      <section class="rounded-2xl border border-[#E8E1D8] bg-white p-12 text-center">
+        <h2 class="text-xl font-semibold text-[#14213A]">
+          Artisan storefront unavailable
+        </h2>
+
+        <p class="mt-3 text-sm text-gray-500">
+          Storefront details are not available.
+        </p>
+
+        <a routerLink="/shop" class="mt-6 inline-block font-semibold text-[#B6502C]">
+          Back to Shop
+        </a>
+      </section>
+    }
+  </div>
+</main>

@@ -1,0 +1,211 @@
+
+<app-header />
+
+<main class="min-h-screen bg-[#F7F3EE] text-[#14213A]">
+  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-12">
+
+    <!-- Breadcrumb -->
+    <nav
+      aria-label="Breadcrumb"
+      class="mb-8 flex flex-wrap items-center gap-2 text-sm text-[#7B756F]"
+    >
+      <a routerLink="/" class="hover:text-[#B6502C]">
+        Home
+      </a>
+
+      <span>/</span>
+
+      <a routerLink="/shop" class="hover:text-[#B6502C]">
+        Shop
+      </a>
+
+      <span>/</span>
+
+      <span class="font-medium text-[#14213A]">
+        Write a Review
+      </span>
+    </nav>
+
+    <!-- Page Heading -->
+    <div class="mb-8 text-center">
+      <p
+        class="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-[#B6502C]"
+      >
+        SHARE YOUR EXPERIENCE
+      </p>
+
+      <h1
+        class="font-serif text-3xl font-bold sm:text-4xl"
+      >
+        Write a Review
+      </h1>
+
+      <p class="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#6F747C]">
+        Tell other shoppers about your experience
+        with this handmade product.
+      </p>
+    </div>
+
+    <!-- Review Form -->
+    <section
+      class="rounded-2xl border border-[#E8E1D8] bg-white p-5 shadow-sm sm:p-8"
+    >
+
+      <!-- Product Reference -->
+      <div class="mb-7 border-b border-[#E8E1D8] pb-6">
+        <p class="text-xs font-semibold uppercase tracking-wider text-[#7B756F]">
+          Reviewing Product
+        </p>
+
+        @if (productId) {
+          <a
+            [routerLink]="['/products', productId]"
+            class="mt-2 inline-block text-sm font-semibold text-[#B6502C] hover:underline"
+          >
+            View product details
+          </a>
+        } @else {
+          <p class="mt-2 text-sm text-red-600">
+            Product ID is missing.
+          </p>
+        }
+      </div>
+
+      <!-- Star Rating -->
+      <div class="mb-7">
+        <h2 class="mb-2 text-base font-bold">
+          Overall Rating
+          <span class="text-red-600">*</span>
+        </h2>
+
+        <p class="mb-4 text-sm text-[#7B756F]">
+          How would you rate this product?
+        </p>
+
+        <div
+          class="flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label="Product rating"
+        >
+          @for (star of stars; track star) {
+            <button
+              type="button"
+              (click)="selectRating(star)"
+              [attr.aria-label]="star + ' out of 5 stars'"
+              [attr.aria-pressed]="rating() === star"
+              class="rounded-lg p-1 text-4xl transition hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B6502C]"
+              [class.text-amber-500]="star <= rating()"
+              [class.text-gray-300]="star > rating()"
+            >
+              ★
+            </button>
+          }
+
+          @if (rating() > 0) {
+            <span class="ml-2 text-sm font-medium text-[#52684D]">
+              {{ ratingLabels[rating()] }}
+            </span>
+          }
+        </div>
+      </div>
+
+      <!-- Review Title -->
+      <div class="mb-6">
+        <label
+          for="reviewTitle"
+          class="mb-2 block text-sm font-bold"
+        >
+          Review Title
+          <span class="text-red-600">*</span>
+        </label>
+
+        <input
+          id="reviewTitle"
+          type="text"
+          maxlength="120"
+          placeholder="Summarize your experience"
+          [ngModel]="reviewTitle()"
+          (ngModelChange)="reviewTitle.set($event)"
+          class="w-full rounded-lg border border-[#D8D6D2] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#B6502C]"
+        />
+
+        <p class="mt-2 text-xs text-[#7B756F]">
+          Minimum 3 characters.
+        </p>
+      </div>
+
+      <!-- Review Description -->
+      <div class="mb-7">
+        <label
+          for="reviewText"
+          class="mb-2 block text-sm font-bold"
+        >
+          Your Review
+          <span class="text-red-600">*</span>
+        </label>
+
+        <textarea
+          id="reviewText"
+          rows="7"
+          maxlength="2000"
+          placeholder="What did you like about the product? How was the quality and craftsmanship?"
+          [ngModel]="reviewText()"
+          (ngModelChange)="reviewText.set($event)"
+          class="w-full resize-y rounded-lg border border-[#D8D6D2] bg-white px-4 py-3 text-sm leading-6 outline-none transition focus:border-[#B6502C]"
+        ></textarea>
+
+        <div
+          class="mt-2 flex flex-wrap justify-between gap-2 text-xs text-[#7B756F]"
+        >
+          <span>Minimum 10 characters.</span>
+          <span>{{ characterCount() }} / 2000</span>
+        </div>
+      </div>
+
+      <!-- Purchase Verification Notice -->
+      <div
+        class="mb-7 rounded-lg border border-[#E8E1D8] bg-[#F7F3EE] p-4"
+      >
+        <p class="text-sm font-semibold text-[#14213A]">
+          Verified Purchase Required
+        </p>
+
+        <p class="mt-2 text-xs leading-5 text-[#6F747C]">
+          Reviews can only be submitted by customers
+          who have purchased and received the product.
+          Eligibility will be checked by the backend.
+        </p>
+      </div>
+
+      <!-- Error Message -->
+      @if (error()) {
+        <div
+          role="alert"
+          class="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        >
+          {{ error() }}
+        </div>
+      }
+
+      <!-- Form Actions -->
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <a
+          routerLink="/shop"
+          class="rounded-lg border border-[#D8D6D2] px-6 py-3 text-sm font-semibold transition hover:bg-[#F7F3EE]"
+        >
+          Cancel
+        </a>
+
+        <button
+          type="button"
+          (click)="submitReview()"
+          [disabled]="!canSubmit()"
+          class="rounded-lg bg-[#B6502C] px-8 py-3 text-sm font-semibold text-white transition hover:bg-[#963E24] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Submit Review
+        </button>
+      </div>
+
+    </section>
+  </div>
+</main>

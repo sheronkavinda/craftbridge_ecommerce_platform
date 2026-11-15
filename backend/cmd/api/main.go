@@ -12,6 +12,8 @@ import (
 	"craftbridge/backend/internal/modules/admin"
 	"craftbridge/backend/internal/modules/audit"
 	"craftbridge/backend/internal/modules/report"
+	"craftbridge/backend/internal/modules/storefront"
+	"craftbridge/backend/internal/modules/wishlist"
 	"craftbridge/backend/internal/platform/config"
 	"craftbridge/backend/internal/platform/database"
 	platformhttp "craftbridge/backend/internal/platform/http"
@@ -25,12 +27,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	   dbPool, err := database.NewPostgresPool(ctx, cfg.DBURL)
-   if err != nil {
-       log.Fatalf("❌ Failed to connect to database: %v", err)
-   }
-   defer dbPool.Close()
-   log.Println("✅ Database connect successful")
+	dbPool, err := database.NewPostgresPool(ctx, cfg.DBURL)
+	if err != nil {
+		log.Fatalf("❌ Failed to connect to database: %v", err)
+	}
+	defer dbPool.Close()
+	log.Println("✅ Database connect successful")
 
 	// Initialize Member 06 modules (Audit, Report, Admin)
 	auditRepo := audit.NewRepository(dbPool)
@@ -52,6 +54,8 @@ func main() {
 			audit.RegisterRoutes(v1, auditHandler)
 			report.RegisterRoutes(v1, reportHandler)
 			admin.RegisterRoutes(v1, adminHandler)
+			storefront.RegisterRoutes(v1)
+			wishlist.RegisterRoutes(v1, dbPool)
 		},
 	)
 

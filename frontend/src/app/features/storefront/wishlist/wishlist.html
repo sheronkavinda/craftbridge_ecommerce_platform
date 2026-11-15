@@ -1,0 +1,205 @@
+
+<app-header />
+
+<main class="min-h-screen bg-[#FAF9F6]">
+  <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+
+    <!-- Breadcrumb -->
+    <nav aria-label="Breadcrumb" class="mb-8 text-sm text-gray-500">
+      <a routerLink="/" class="hover:text-orange-700">Home</a>
+      <span class="mx-2">/</span>
+      <span class="font-medium text-gray-900">My Wishlist</span>
+    </nav>
+
+    <div class="grid gap-10 lg:grid-cols-[240px_1fr]">
+
+      <!-- Account Sidebar -->
+      <aside>
+        <div class="rounded-2xl border border-gray-200 bg-white p-6">
+          <h2 class="mb-5 text-lg font-semibold text-gray-900">
+            My Account
+          </h2>
+
+          <nav aria-label="Account navigation" class="space-y-2 text-sm">
+            <div class="rounded-lg px-4 py-3 text-gray-500">
+              Account Overview
+            </div>
+
+            <div class="rounded-lg px-4 py-3 text-gray-500">
+              My Orders
+            </div>
+
+            <a
+              routerLink="/wishlist"
+              aria-current="page"
+              class="block rounded-lg bg-orange-50 px-4 py-3 font-semibold text-orange-700"
+            >
+              My Wishlist
+            </a>
+
+            <div class="rounded-lg px-4 py-3 text-gray-500">
+              Account Settings
+            </div>
+          </nav>
+        </div>
+      </aside>
+
+      <!-- Wishlist Content -->
+      <section>
+        <div class="mb-8">
+          <p class="mb-2 text-sm font-semibold uppercase tracking-widest text-orange-700">
+            Your Favorites
+          </p>
+
+          <h1 class="text-3xl font-bold text-gray-900 sm:text-4xl">
+            Your saved finds
+          </h1>
+
+          <p class="mt-3 text-gray-600">
+            Keep your favorite handmade treasures in one place.
+          </p>
+        </div>
+
+        <!-- Loading -->
+        @if (loading()) {
+          <div
+            role="status"
+            class="rounded-2xl border border-gray-200 bg-white p-12 text-center"
+          >
+            <div
+              class="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-orange-700"
+            ></div>
+
+            <p class="mt-5 text-gray-600">
+              Loading your wishlist...
+            </p>
+          </div>
+        } @else {
+
+          <!-- Error -->
+          @if (error()) {
+            <div
+              role="alert"
+              class="mb-6 rounded-2xl border border-red-200 bg-red-50 p-6"
+            >
+              <p class="text-sm text-red-700">
+                {{ error() }}
+              </p>
+
+              <button
+                type="button"
+                (click)="loadWishlist()"
+                class="mt-4 rounded-lg bg-white px-5 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-100"
+              >
+                Try Again
+              </button>
+            </div>
+          }
+
+          <!-- Empty Wishlist -->
+          @if (!error() && items().length === 0) {
+            <div class="rounded-3xl border border-gray-200 bg-white px-6 py-20 text-center">
+
+              <div class="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-orange-50">
+                <svg
+                  class="h-10 w-10 text-orange-600"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78Z"
+                  />
+                </svg>
+              </div>
+
+              <h2 class="text-2xl font-bold text-gray-900">
+                Your wishlist is waiting
+              </h2>
+
+              <p class="mx-auto mt-4 max-w-md text-gray-600">
+                You haven't saved any products yet.
+                Explore unique handmade creations and save the ones you love.
+              </p>
+
+              <a
+                routerLink="/shop"
+                class="mt-8 inline-flex items-center justify-center rounded-xl bg-orange-700 px-8 py-3 font-semibold text-white transition hover:bg-orange-800"
+              >
+                Explore Handmade Products
+              </a>
+            </div>
+          }
+
+          <!-- Saved Products -->
+          @if (items().length > 0) {
+            <div class="mb-5 flex items-center justify-between gap-4">
+              <h2 class="text-lg font-semibold text-gray-900">
+                Saved Products
+              </h2>
+
+              <span class="text-sm text-gray-500">
+                {{ items().length }} items
+              </span>
+            </div>
+
+            <div class="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              @for (item of items(); track item.id) {
+                <article class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:shadow-md">
+
+                  <div class="mb-5 flex h-28 items-center justify-center rounded-xl bg-orange-50">
+                    <svg
+                      class="h-12 w-12 text-orange-300"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78Z"
+                      />
+                    </svg>
+                  </div>
+
+                  <p class="text-xs font-semibold uppercase tracking-wider text-orange-700">
+                    Saved Product
+                  </p>
+
+                  <p class="mt-2 break-all text-sm text-gray-500">
+                    Product ID: {{ item.productId }}
+                  </p>
+
+                  <div class="mt-6 flex flex-wrap gap-3">
+                    <a
+                      [routerLink]="['/products', item.productId]"
+                      class="inline-flex items-center justify-center rounded-lg bg-orange-700 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-800"
+                    >
+                      View Product
+                    </a>
+
+                    <button
+                      type="button"
+                      (click)="removeItem(item.productId)"
+                      [disabled]="removingId() !== null"
+                      class="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      [attr.aria-label]="'Remove product ' + item.productId + ' from wishlist'"
+                    >
+                      {{ removingId() === item.productId ? 'Removing...' : 'Remove' }}
+                    </button>
+                  </div>
+                </article>
+              }
+            </div>
+          }
+        }
+      </section>
+    </div>
+  </div>
+</main>

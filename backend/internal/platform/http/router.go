@@ -97,6 +97,35 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 	}
 }
 
+// RequireAuthenticatedUser verifies the user's JWT.
+func RequireAuthenticatedUser() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+
+		if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "valid bearer token required",
+			})
+			return
+		}
+
+		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+
+		if err != nil || strings.TrimSpace(actorID) == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: valid authentication required",
+			})
+			return
+		}
+
+		c.Set(ContextKeyActorID, actorID)
+		c.Set(ContextKeyActorName, actorName)
+		c.Set(ContextKeyActorRole, actorRole)
+
+		c.Next()
+	}
+}
+
 // RequireAdminRole enforces strict Role-Based Access Control (RBAC).
 // It blocks any caller that is not authenticated with the 'admin' role.
 func RequireAdminRole() gin.HandlerFunc {

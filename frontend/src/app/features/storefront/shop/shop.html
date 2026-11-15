@@ -1,0 +1,336 @@
+
+<app-header></app-header>
+
+<main class="min-h-screen bg-[#faf8f5] text-[#18314c]">
+  <div class="mx-auto grid max-w-[1440px] grid-cols-1 md:grid-cols-[210px_minmax(0,1fr)] lg:grid-cols-[235px_minmax(0,1fr)]">
+
+    <!-- FILTER SIDEBAR -->
+    <aside class="border-b border-[#e8e2db] bg-[#f7f4ef] px-5 py-7 md:border-r md:border-b-0 lg:px-7">
+
+      <div class="mb-6 flex items-center justify-between gap-3">
+        <h2 class="text-lg font-bold">Filters</h2>
+        <button
+          type="button"
+          class="text-xs text-[#b84f30] underline"
+          (click)="clearFilters()"
+        >
+          Clear all
+        </button>
+      </div>
+
+      <!-- CATEGORIES -->
+      <section class="border-t border-[#e5ded5] py-5">
+        <h3 class="mb-4 text-sm font-bold">Category</h3>
+
+        <label class="mb-3 flex cursor-pointer items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            class="size-4 accent-[#b94e2d]"
+            [checked]="selectedCategories().length === 0"
+            (change)="selectedCategories.set([])"
+          />
+          All Categories
+        </label>
+
+        @for (category of categories; track category.value) {
+          <label class="mb-3 flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="size-4 accent-[#b94e2d]"
+              [checked]="selectedCategories().includes(category.value)"
+              (change)="toggleCategory(category.value)"
+            />
+            {{ category.name }}
+          </label>
+        }
+      </section>
+
+
+<!-- PRICE RANGE -->
+<section class="border-t border-[#e5ded5] py-5">
+  <h3 class="mb-4 text-sm font-bold">Price Range</h3>
+
+  <div class="mb-4">
+    <input
+      type="range"
+      min="0"
+      max="200"
+      step="5"
+      [ngModel]="maxPrice() ?? 200"
+      (ngModelChange)="onMaxPriceChange($event.toString())"
+      aria-label="Maximum price"
+      class="w-full cursor-pointer accent-[#b94e2d]"
+    />
+  </div>
+
+  <div class="flex items-end gap-2">
+    <label class="min-w-0 flex-1">
+      <span class="mb-2 block text-xs text-slate-500">Min</span>
+      <input
+        type="number"
+        min="0"
+        placeholder="0"
+        [ngModel]="minPrice()"
+        (ngModelChange)="onMinPriceChange($event == null ? '' : $event.toString())"
+        class="w-full rounded-md border border-[#dedbd6] bg-white p-2 text-xs"
+      />
+    </label>
+
+    <span class="pb-2 text-slate-500">–</span>
+
+    <label class="min-w-0 flex-1">
+      <span class="mb-2 block text-xs text-slate-500">Max</span>
+      <input
+        type="number"
+        min="0"
+        placeholder="200+"
+        [ngModel]="maxPrice()"
+        (ngModelChange)="onMaxPriceChange($event == null ? '' : $event.toString())"
+        class="w-full rounded-md border border-[#dedbd6] bg-white p-2 text-xs"
+      />
+    </label>
+  </div>
+</section>
+
+      <!-- SELLER COUNTRY -->
+      <section class="border-t border-[#e5ded5] py-5">
+        <h3 class="mb-4 text-sm font-bold">Seller Country</h3>
+
+        <label class="flex cursor-pointer items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            class="size-4 accent-[#b94e2d]"
+            [checked]="selectedCountry() === 'Sri Lanka'"
+            (change)="onCountryChange(selectedCountry() === 'Sri Lanka' ? '' : 'Sri Lanka')"
+          />
+          Sri Lanka
+        </label>
+      </section>
+
+      <!-- AVAILABILITY -->
+      <section class="border-t border-[#e5ded5] py-5">
+        <h3 class="mb-4 text-sm font-bold">Availability</h3>
+
+        <label class="mb-3 flex cursor-pointer items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            class="size-4 accent-[#b94e2d]"
+            [checked]="selectedAvailability() === 'in-stock'"
+            (change)="onAvailabilityChange(selectedAvailability() === 'in-stock' ? '' : 'in-stock')"
+          />
+          In stock
+        </label>
+
+        <label class="flex cursor-pointer items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            class="size-4 accent-[#b94e2d]"
+            [checked]="selectedAvailability() === 'made-to-order'"
+            (change)="onAvailabilityChange(selectedAvailability() === 'made-to-order' ? '' : 'made-to-order')"
+          />
+          Made to order
+        </label>
+      </section>
+
+      <!-- CUSTOMER RATING -->
+      <section class="border-t border-[#e5ded5] py-5">
+        <h3 class="mb-4 text-sm font-bold">Customer Rating</h3>
+
+        @for (rating of [4, 3, 2, 1]; track rating) {
+          <label class="mb-3 flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="radio"
+              name="minimumRating"
+              class="size-4 accent-[#b94e2d]"
+              [checked]="minimumRating() === rating"
+              (change)="onRatingChange(rating)"
+            />
+
+            <span class="flex text-base">
+              @for (star of [1, 2, 3, 4, 5]; track star) {
+                <span [class.text-amber-500]="star <= rating"
+                      [class.text-gray-300]="star > rating">★</span>
+              }
+            </span>
+
+            <span>&amp; up</span>
+          </label>
+        }
+
+        <button
+          type="button"
+          class="text-xs text-[#b84f30] underline"
+          (click)="onRatingChange(null)"
+        >
+          Clear rating
+        </button>
+      </section>
+    </aside>
+
+    <!-- SHOP CONTENT -->
+    <section class="min-w-0 px-4 py-7 sm:px-6 lg:px-7">
+
+      <!-- PAGE HEADING -->
+      <div class="mb-6">
+        <p class="mb-2 text-[10px] font-bold tracking-[0.2em] text-[#ae7e48]">
+          HANDMADE IN SRI LANKA
+        </p>
+
+        <h1 class="mb-3 font-serif text-3xl leading-tight text-[#14243c] sm:text-4xl lg:text-5xl">
+          Discover handmade treasures
+        </h1>
+
+        <p class="font-serif text-base leading-relaxed text-[#52657a]">
+          Authentic crafts from Sri Lanka. Meaningful pieces for a more human home.
+        </p>
+      </div>
+
+      <!-- SEARCH BAR -->
+      <div class="mb-6 flex max-w-xl items-center gap-3 rounded-lg border border-[#ddd9d3] bg-white px-4 py-3 focus-within:border-[#b94e2d]">
+        <svg class="size-5 shrink-0 text-slate-500" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke-width="1.8"></circle>
+          <path d="m16 16 5 5" stroke-width="1.8" stroke-linecap="round"></path>
+        </svg>
+
+        <input
+          type="search"
+          placeholder="Search handmade goods, artisans, or categories..."
+          aria-label="Search products"
+          class="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
+          [ngModel]="searchQuery()"
+          (ngModelChange)="onSearchChange($event)"
+        />
+      </div>
+
+      <!-- FILTER TAGS AND SORTING -->
+      <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex flex-wrap gap-2">
+          @for (filter of activeFilters(); track filter) {
+            <button
+              type="button"
+              class="rounded-full bg-[#e2eee8] px-3 py-2 text-xs text-[#294b49] transition hover:bg-[#d0e4da]"
+              (click)="removeFilter(filter)"
+            >
+              {{ filter }}
+              <span class="ml-1 font-bold">×</span>
+            </button>
+          }
+        </div>
+
+        <div class="ml-auto flex flex-wrap items-center gap-4">
+          <span class="text-xs text-[#455a70]">
+            {{ totalResults() }} results
+          </span>
+
+          <label>
+            <span class="sr-only">Sort products</span>
+            <select
+              class="rounded-md border border-[#dcdedc] bg-white px-3 py-2 text-xs text-[#334c65]"
+              [ngModel]="sortBy()"
+              (ngModelChange)="onSortChange($event)"
+            >
+              @for (option of sortOptions; track option.value) {
+                <option [value]="option.value">
+                  Sort by: {{ option.label }}
+                </option>
+              }
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <!-- PRODUCT GRID -->
+      @if (paginatedProducts().length > 0) {
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          @for (product of paginatedProducts(); track product.id) {
+            <app-product-card
+              [product]="product"
+              (wishlistClicked)="onWishlistClick($event)"
+            ></app-product-card>
+          }
+        </div>
+      } @else {
+        <!-- EMPTY STATE -->
+        <div class="flex min-h-[340px] flex-col items-center justify-center rounded-xl border border-dashed border-[#ddd6cd] bg-white px-5 py-10 text-center">
+          <div class="mb-3 text-4xl text-[#b58a57]">✦</div>
+
+          <h2 class="mb-3 font-serif text-2xl text-[#18314c]">
+            No products found
+          </h2>
+
+          <p class="mb-6 max-w-md text-sm leading-relaxed text-[#65758a]">
+            Products will appear here when they are available from our catalog.
+            You can also try changing your filters.
+          </p>
+
+          <button
+            type="button"
+            class="rounded-md bg-[#b94e2d] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#963e24]"
+            (click)="clearFilters()"
+          >
+            Clear filters
+          </button>
+        </div>
+      }
+
+      <!-- PAGINATION -->
+      @if (totalResults() > 0) {
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-5">
+
+          <nav class="flex items-center gap-2" aria-label="Product pages">
+            <button
+              type="button"
+              class="size-9 rounded-md border border-[#e1ded9] bg-white text-sm disabled:cursor-not-allowed disabled:opacity-40"
+              [disabled]="currentPage() === 1"
+              (click)="goToPage(currentPage() - 1)"
+              aria-label="Previous page"
+            >
+              ‹
+            </button>
+
+            @for (page of pages(); track page) {
+              <button
+                type="button"
+                class="size-9 rounded-md border text-xs transition"
+                [class.border-[#b94e2d]]="currentPage() === page"
+                [class.bg-[#b94e2d]]="currentPage() === page"
+                [class.text-white]="currentPage() === page"
+                [class.border-[#e1ded9]]="currentPage() !== page"
+                [class.bg-white]="currentPage() !== page"
+                [attr.aria-current]="currentPage() === page ? 'page' : null"
+                (click)="goToPage(page)"
+              >
+                {{ page }}
+              </button>
+            }
+
+            <button
+              type="button"
+              class="size-9 rounded-md border border-[#e1ded9] bg-white text-sm disabled:cursor-not-allowed disabled:opacity-40"
+              [disabled]="currentPage() === totalPages()"
+              (click)="goToPage(currentPage() + 1)"
+              aria-label="Next page"
+            >
+              ›
+            </button>
+          </nav>
+
+          <label>
+            <span class="sr-only">Products per page</span>
+            <select
+              class="rounded-md border border-[#dcdedc] bg-white px-3 py-2 text-xs"
+              [ngModel]="pageSize()"
+              (ngModelChange)="onPageSizeChange($event)"
+            >
+              <option [value]="8">8 per page</option>
+              <option [value]="12">12 per page</option>
+              <option [value]="24">24 per page</option>
+            </select>
+          </label>
+        </div>
+      }
+
+    </section>
+  </div>
+</main>
