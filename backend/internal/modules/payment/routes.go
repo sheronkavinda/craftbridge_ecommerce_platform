@@ -1,3 +1,16 @@
 package payment
 
-// TODO: Implement routes.
+import (
+	platformhttp "craftbridge/backend/internal/platform/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// RegisterRoutes mounts the payment endpoints onto the /api/v1 router group.
+func RegisterRoutes(rg *gin.RouterGroup, handler *Handler) {
+	buyerOrders := rg.Group("/orders")
+	buyerOrders.Use(platformhttp.RequireBuyerRole())
+	{
+		buyerOrders.POST("/:id/payments", handler.InitiatePayment)
+	}
+}

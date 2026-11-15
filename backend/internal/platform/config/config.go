@@ -9,12 +9,18 @@ import (
 
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
-	Port           string
-	AppEnv         string
-	DBURL          string
-	JWTSecret      string
-	JWTExpiryHours int
-	CORSOrigins    []string
+	Port                  string
+	AppEnv                string
+	DBURL                 string
+	JWTSecret             string
+	JWTExpiryHours        int
+	CORSOrigins           []string
+	PayHereMerchantID     string
+	PayHereMerchantSecret string
+	PayHereCheckoutURL    string
+	PaymentReturnURL      string
+	PaymentCancelURL      string
+	PaymentNotifyURL      string
 }
 
 // Load reads configuration from .env files (if present) and environment variables.
@@ -37,12 +43,18 @@ func Load() *Config {
 	}
 
 	return &Config{
-		Port:           getEnv("PORT", "8080"),
-		AppEnv:         getEnv("APP_ENV", "development"),
-		DBURL:          getEnv("DB_URL", "postgres://postgres:postgres@localhost:5432/craftbridge?sslmode=disable"),
-		JWTSecret:      getEnv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production"),
-		JWTExpiryHours: expiryHours,
-		CORSOrigins:    origins,
+		Port:                  getEnv("PORT", "8080"),
+		AppEnv:                getEnv("APP_ENV", "development"),
+		DBURL:                 getEnv("DB_URL", "postgres://postgres:postgres@localhost:5432/craftbridge?sslmode=disable"),
+		JWTSecret:             getEnv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production"),
+		JWTExpiryHours:        expiryHours,
+		CORSOrigins:           origins,
+		PayHereMerchantID:     getEnv("PAYHERE_MERCHANT_ID", ""),
+		PayHereMerchantSecret: getEnv("PAYHERE_MERCHANT_SECRET", ""),
+		PayHereCheckoutURL:    getEnv("PAYHERE_CHECKOUT_URL", "https://sandbox.payhere.lk/pay/checkout"),
+		PaymentReturnURL:      getEnv("PAYMENT_RETURN_URL", ""),
+		PaymentCancelURL:      getEnv("PAYMENT_CANCEL_URL", ""),
+		PaymentNotifyURL:      getEnv("PAYMENT_NOTIFY_URL", ""),
 	}
 }
 

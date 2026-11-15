@@ -130,6 +130,39 @@ func RequireAdminRole() gin.HandlerFunc {
 	}
 }
 
+// RequireBuyerRole enforces Role-Based Access Control (RBAC) for buyer operations.
+// It blocks any caller that is not authenticated with the 'buyer' role.
+func RequireBuyerRole() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: valid authentication credentials required",
+			})
+			return
+		}
+
+		if !strings.EqualFold(actorRole, "buyer") {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "forbidden: buyer role required",
+			})
+			return
+		}
+
+		if actorID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: missing actor identity",
+			})
+			return
+		}
+
+		c.Set(ContextKeyActorID, actorID)
+		c.Set(ContextKeyActorName, actorName)
+		c.Set(ContextKeyActorRole, "buyer")
+		c.Next()
+	}
+}
+
 func extractVerifiedIdentity(c *gin.Context) (actorID, actorName, actorRole string, err error) {
 	cfg := activeConfig.Load()
 	appEnv := "development"
@@ -333,7 +366,8 @@ const openAPISpecJSON = `{
     { "name": "Admin - Categories", "description": "Product catalog category management" },
     { "name": "Admin - Refunds", "description": "Administrative refund review and status transitions" },
     { "name": "Admin - Audit Logs", "description": "Immutable append-only administrative audit trail" },
-    { "name": "Reports", "description": "Platform revenue and seller sales aggregation reports" }
+    { "name": "Reports", "description": "Platform revenue and seller sales aggregation reports" },
+    { "name": "Payments", "description": "Buyer order payment initiation and gateway checkout" }
   ],
   "security": [
     { "BearerAuth": [] },
@@ -569,6 +603,24 @@ const openAPISpecJSON = `{
           "verified_payments": { "type": "number", "format": "double", "example": 4200.00 },
           "refunds": { "type": "number", "format": "double", "example": 120.00 },
           "net_revenue": { "type": "number", "format": "double", "example": 4080.00 }
+        }
+      },
+      "InitiatePaymentResponse": {
+        "type": "object",
+        "properties": {
+          "attempt_id": { "type": "string", "example": "att-1a2b3c4d5e6f7a8b" },
+          "status": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED", "EXPIRED", "CANCELLED"], "example": "PENDING" },
+          "checkout": {
+            "type": "object",
+            "properties": {
+              "checkout_url": { "type": "string", "example": "https://sandbox.payhere.lk/pay/checkout" },
+              "method": { "type": "string", "example": "POST" },
+              "fields": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
         }
       }
     }
@@ -1045,6 +1097,33 @@ const openAPISpecJSON = `{
         ],
         "responses": {
           "200": { "description": "Daily revenue breakdown" }
+        }
+      }
+    },
+    "/api/v1/orders/{id}/payments": {
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Initiate a payment attempt for a pending buyer order",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
+        ],
+        "responses": {
+          "201": {
+            "description": "Payment attempt created (or recent pending attempt reused) and checkout fields returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InitiatePaymentResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Order not found" },
+          "409": { "description": "Order is not pending payment" },
+          "503": { "description": "Payment provider not configured" }
         }
       }
     }

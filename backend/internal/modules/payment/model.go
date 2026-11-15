@@ -44,3 +44,36 @@ type PaymentEvent struct {
 	ProcessedAt     *time.Time      `json:"processed_at,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
 }
+
+// Actor represents the authenticated caller initiating a payment operation.
+type Actor struct {
+	ID   string
+	Name string
+	Role string
+}
+
+// OrderForPayment holds the order fields needed to validate and initiate a payment attempt.
+type OrderForPayment struct {
+	OrderID     string
+	OrderNumber string
+	UserID      string
+	AmountCents int64
+	Currency    string
+	Status      string
+	BuyerName   string
+	BuyerEmail  string
+}
+
+// CheckoutDescriptor represents the checkout redirect/form descriptor returned to the client.
+type CheckoutDescriptor struct {
+	CheckoutURL string            `json:"checkout_url"`
+	Method      string            `json:"method"`
+	Fields      map[string]string `json:"fields"`
+}
+
+// InitiatePaymentResponse represents the payload returned by POST /api/v1/orders/:id/payments.
+type InitiatePaymentResponse struct {
+	AttemptID string             `json:"attempt_id"`
+	Status    PaymentStatus      `json:"status"`
+	Checkout  CheckoutDescriptor `json:"checkout"`
+}
