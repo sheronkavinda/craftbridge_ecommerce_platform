@@ -1,4 +1,3 @@
-
 package order
 
 import (
@@ -11,14 +10,14 @@ import (
 )
 
 var (
-	ErrInvalidOrder = errors.New("invalid order request")
-	ErrEmptyCart = errors.New("cart is empty")
-	ErrInvalidAddress = errors.New("invalid delivery address")
-	ErrStockUnavailable = errors.New("product unavailable or insufficient stock")
-	ErrOrderNotFound = errors.New("order not found")
-	ErrInvalidTransition = errors.New("invalid order state transition")
+	ErrInvalidOrder         = errors.New("invalid order request")
+	ErrEmptyCart            = errors.New("cart is empty")
+	ErrInvalidAddress       = errors.New("invalid delivery address")
+	ErrStockUnavailable     = errors.New("product unavailable or insufficient stock")
+	ErrOrderNotFound        = errors.New("order not found")
+	ErrInvalidTransition    = errors.New("invalid order state transition")
 	ErrInventoryUnavailable = errors.New("inventory integration unavailable")
-	ErrIdempotencyConflict = errors.New("idempotency key reused for another checkout")
+	ErrIdempotencyConflict  = errors.New("idempotency key reused for another checkout")
 )
 
 // Kanishka's catalog service implements this interface.
@@ -95,5 +94,6 @@ type checkoutItem struct {
 type checkoutGroup struct {
 	ShopID   int64
 	Subtotal int64
+	Shipping int64
 	Items    []checkoutItem
 }

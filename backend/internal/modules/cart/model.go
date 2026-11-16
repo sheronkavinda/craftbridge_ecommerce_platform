@@ -1,13 +1,12 @@
-
 package cart
 
 import "errors"
 
 var (
-	ErrInvalidCart = errors.New("invalid cart request")
-	ErrUnavailable = errors.New("product unavailable or insufficient stock")
+	ErrInvalidCart      = errors.New("invalid cart request")
+	ErrUnavailable      = errors.New("product unavailable or insufficient stock")
 	ErrCartItemNotFound = errors.New("cart item not found")
-	ErrCartEmpty = errors.New("cart is empty")
+	ErrCartEmpty        = errors.New("cart is empty")
 )
 
 type Item struct {

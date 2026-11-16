@@ -1,4 +1,3 @@
-
 package cart
 
 import (
@@ -48,7 +47,7 @@ func (r *Repository) GetCart(
 	defer rows.Close()
 
 	result := &Summary{
-		Items: make([]Item, 0),
+		Items:    make([]Item, 0),
 		Currency: "USD",
 	}
 
