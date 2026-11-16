@@ -1,4 +1,3 @@
-
 package shipping
 
 import (
@@ -13,7 +12,7 @@ import (
 )
 
 var (
-	ErrInvalidShipment = errors.New("invalid shipment update")
+	ErrInvalidShipment  = errors.New("invalid shipment update")
 	ErrShipmentNotFound = errors.New("shipment or order not found")
 	ErrFulfillmentState = errors.New("invalid fulfillment state")
 )
