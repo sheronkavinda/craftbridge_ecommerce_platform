@@ -1,4 +1,3 @@
-
 package catalog
 
 import (
@@ -12,16 +11,31 @@ import (
 	"strings"
 )
 
+// ImageStore defines the interface for storing
+// and deleting product images.
 type ImageStore interface {
-	Save(ctx context.Context, data []byte, extension string) (string, error)
-	Delete(ctx context.Context, imageURL string) error
+	Save(
+		ctx context.Context,
+		data []byte,
+		extension string,
+	) (string, error)
+
+	Delete(
+		ctx context.Context,
+		imageURL string,
+	) error
 }
 
+// LocalImageStore stores product images locally.
 type LocalImageStore struct {
 	directory string
 }
 
-func NewLocalImageStore(directory string) (*LocalImageStore, error) {
+// NewLocalImageStore creates the image storage folder.
+func NewLocalImageStore(
+	directory string,
+) (*LocalImageStore, error) {
+
 	if err := os.MkdirAll(directory, 0750); err != nil {
 		return nil, err
 	}
@@ -31,7 +45,7 @@ func NewLocalImageStore(directory string) (*LocalImageStore, error) {
 	}, nil
 }
 
-// Save creates a random filename and stores image bytes.
+// Save stores an image using a random filename.
 func (s *LocalImageStore) Save(
 	ctx context.Context,
 	data []byte,
@@ -45,7 +59,13 @@ func (s *LocalImageStore) Save(
 	switch extension {
 	case ".jpg", ".png", ".webp":
 	default:
-		return "", errors.New("unsupported image extension")
+		return "", errors.New(
+			"unsupported image extension",
+		)
+	}
+
+	if len(data) == 0 {
+		return "", errors.New("empty image data")
 	}
 
 	randomBytes := make([]byte, 16)
@@ -55,13 +75,18 @@ func (s *LocalImageStore) Save(
 	}
 
 	filename := hex.EncodeToString(randomBytes) + extension
-	fullPath := filepath.Join(s.directory, filename)
+
+	fullPath := filepath.Join(
+		s.directory,
+		filename,
+	)
 
 	file, err := os.OpenFile(
 		fullPath,
 		os.O_CREATE|os.O_EXCL|os.O_WRONLY,
 		0640,
 	)
+
 	if err != nil {
 		return "", err
 	}
@@ -74,14 +99,15 @@ func (s *LocalImageStore) Save(
 
 		return "", fmt.Errorf(
 			"image write failed: %v %v",
-			writeErr, closeErr,
+			writeErr,
+			closeErr,
 		)
 	}
 
 	return "/media/catalog/" + filename, nil
 }
 
-// Delete removes an image using only its generated filename.
+// Delete removes an image from local storage.
 func (s *LocalImageStore) Delete(
 	ctx context.Context,
 	imageURL string,
@@ -94,10 +120,13 @@ func (s *LocalImageStore) Delete(
 	const prefix = "/media/catalog/"
 
 	if !strings.HasPrefix(imageURL, prefix) {
-		return errors.New("invalid local image path")
+		return errors.New("invalid image path")
 	}
 
-	filename := strings.TrimPrefix(imageURL, prefix)
+	filename := strings.TrimPrefix(
+		imageURL,
+		prefix,
+	)
 
 	if filename == "" ||
 		filename == "." ||
@@ -106,7 +135,10 @@ func (s *LocalImageStore) Delete(
 		return errors.New("unsafe image filename")
 	}
 
-	fullPath := filepath.Join(s.directory, filename)
+	fullPath := filepath.Join(
+		s.directory,
+		filename,
+	)
 
 	err := os.Remove(fullPath)
 
