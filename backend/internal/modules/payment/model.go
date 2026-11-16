@@ -16,6 +16,31 @@ const (
 	PaymentStatusCancelled PaymentStatus = "CANCELLED"
 )
 
+// IsValidPaymentStatus reports whether s is a known PaymentStatus value.
+func IsValidPaymentStatus(s PaymentStatus) bool {
+	switch s {
+	case PaymentStatusPending, PaymentStatusSuccess, PaymentStatusFailed, PaymentStatusExpired, PaymentStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// PublicFailureReason returns a sanitized short public reason for non-successful terminal payment statuses.
+// Internal failure_reason strings from payment_attempts are never exposed directly to buyers.
+func PublicFailureReason(status PaymentStatus) string {
+	switch status {
+	case PaymentStatusFailed:
+		return "payment_failed"
+	case PaymentStatusCancelled:
+		return "cancelled"
+	case PaymentStatusExpired:
+		return "expired"
+	default:
+		return ""
+	}
+}
+
 // PaymentAttempt represents a single checkout payment attempt initiated for an order.
 type PaymentAttempt struct {
 	ID                string        `json:"id"`
@@ -81,4 +106,47 @@ type InitiatePaymentResponse struct {
 // WebhookResponse represents the payload returned by POST /api/v1/webhooks/payments/:provider.
 type WebhookResponse struct {
 	Status string `json:"status"`
+}
+
+// ReconcileSummary reports the outcome counts of a pending-payment reconciliation pass.
+type ReconcileSummary struct {
+	Checked   int `json:"checked"`
+	Succeeded int `json:"succeeded"`
+	Failed    int `json:"failed"`
+	Cancelled int `json:"cancelled"`
+	Expired   int `json:"expired"`
+	Errors    int `json:"errors"`
+}
+
+// ListBuyerPaymentsFilter specifies pagination and status filtering for a buyer's payment history.
+type ListBuyerPaymentsFilter struct {
+	UserID   string
+	Status   PaymentStatus
+	Page     int
+	PageSize int
+}
+
+// PaginationMeta holds pagination metadata for list responses.
+type PaginationMeta struct {
+	Page     int   `json:"page"`
+	PageSize int   `json:"page_size"`
+	Total    int64 `json:"total"`
+}
+
+// BuyerPaymentItem represents a single payment attempt in the buyer's payment history list/detail responses.
+// Raw event payloads, cryptographic signatures, and internal failure_reason details are never included.
+type BuyerPaymentItem struct {
+	ID                string        `json:"id"`
+	OrderID           string        `json:"order_id"`
+	OrderNumber       string        `json:"order_number"`
+	OrderStatus       string        `json:"order_status,omitempty"`
+	Status            PaymentStatus `json:"status"`
+	AmountCents       int64         `json:"amount_cents"`
+	Amount            string        `json:"amount"`
+	Currency          string        `json:"currency"`
+	Provider          string        `json:"provider"`
+	ProviderReference *string       `json:"provider_reference,omitempty"`
+	PublicReason      string        `json:"public_reason,omitempty"`
+	CreatedAt         time.Time     `json:"created_at"`
+	CompletedAt       *time.Time    `json:"completed_at,omitempty"`
 }

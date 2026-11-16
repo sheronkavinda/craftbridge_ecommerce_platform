@@ -3,7 +3,13 @@ package payment
 import (
 	"context"
 	"errors"
+	"net/http"
 )
+
+// HTTPDoer abstracts an HTTP client for provider API requests so tests can inject httptest.Server clients.
+type HTTPDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 var (
 	// ErrNotImplemented is returned when a provider method is not yet implemented.

@@ -20,18 +20,41 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type paymentAuditAdapter struct {
+	auditSvc *audit.Service
+}
+
+func (a *paymentAuditAdapter) RecordAdminAction(
+	ctx context.Context,
+	actor payment.Actor,
+	requestID, action, target, outcome, details string,
+) {
+	if a == nil || a.auditSvc == nil {
+		return
+	}
+	_, _ = a.auditSvc.LogAction(ctx, audit.CreateAuditLogInput{
+		ActorID:   actor.ID,
+		ActorName: actor.Name,
+		Action:    action,
+		Target:    target,
+		Outcome:   outcome,
+		RequestID: requestID,
+		Details:   details,
+	})
+}
+
 func main() {
 	cfg := config.Load()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	   dbPool, err := database.NewPostgresPool(ctx, cfg.DBURL)
-   if err != nil {
-       log.Fatalf("❌ Failed to connect to database: %v", err)
-   }
-   defer dbPool.Close()
-   log.Println("✅ Database connect successful")
+	dbPool, err := database.NewPostgresPool(ctx, cfg.DBURL)
+	if err != nil {
+		log.Fatalf("❌ Failed to connect to database: %v", err)
+	}
+	defer dbPool.Close()
+	log.Println("✅ Database connect successful")
 
 	// Initialize Member 06 modules (Audit, Report, Admin)
 	auditRepo := audit.NewRepository(dbPool)
@@ -49,6 +72,12 @@ func main() {
 	paymentProvider := payment.NewPayHereSandboxProvider(cfg)
 	paymentRepo := payment.NewRepository(dbPool)
 	paymentService := payment.NewService(paymentRepo, paymentRepo, paymentProvider)
+	paymentService.SetReconcileConfig(
+		time.Duration(cfg.PaymentReconcileAfterMinutes)*time.Minute,
+		time.Duration(cfg.PaymentAttemptTTLHours)*time.Hour,
+	)
+	paymentService.SetAuditRecorder(&paymentAuditAdapter{auditSvc: auditService})
+	paymentService.StartReconcileWorker(ctx, time.Duration(cfg.PaymentReconcileIntervalSeconds)*time.Second)
 	paymentHandler := payment.NewHandler(paymentService)
 
 	router := platformhttp.NewRouter(

@@ -356,6 +356,7 @@ func (r *Repository) CreateAttempt(ctx context.Context, attempt PaymentAttempt) 
 }
 
 // UpdateAttemptStatus updates a payment attempt's status, provider_reference, failure_reason, and completed_at inside a transaction.
+// When transitioning to SUCCESS, failure_reason is explicitly cleared (set to NULL).
 func (r *Repository) UpdateAttemptStatus(
 	ctx context.Context,
 	attemptID string,
@@ -369,7 +370,7 @@ func (r *Repository) UpdateAttemptStatus(
 		SET
 			status = $2,
 			provider_reference = COALESCE($3, provider_reference),
-			failure_reason = COALESCE($4, failure_reason),
+			failure_reason = CASE WHEN $2 = 'SUCCESS' THEN NULL ELSE COALESCE($4, failure_reason) END,
 			completed_at = COALESCE($5, completed_at),
 			updated_at = NOW()
 		WHERE id::text = $1
@@ -420,6 +421,186 @@ func (r *Repository) UpdateAttemptStatus(
 	}
 
 	return &updated, nil
+}
+
+// ClaimPendingAttemptsForReconcile selects PENDING payment attempts created at or before olderThan
+// using SELECT ... FOR UPDATE SKIP LOCKED inside a transaction so concurrent workers never claim the same rows.
+func (r *Repository) ClaimPendingAttemptsForReconcile(ctx context.Context, olderThan time.Time, limit int) ([]PaymentAttempt, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 50
+	}
+
+	const query = `
+		SELECT
+			id::text,
+			order_id::text,
+			user_id::text,
+			provider,
+			provider_reference,
+			amount_cents,
+			currency,
+			status,
+			failure_reason,
+			created_at,
+			updated_at,
+			completed_at
+		FROM payment_attempts
+		WHERE status = 'PENDING'
+		  AND created_at <= $1
+		ORDER BY created_at ASC
+		LIMIT $2
+		FOR UPDATE SKIP LOCKED
+	`
+
+	rows, err := r.querier(ctx).Query(ctx, query, olderThan, limit)
+	if err != nil {
+		log.Printf("[req_id=%s] payment.Repository.ClaimPendingAttemptsForReconcile error: %v", reqIDFromContext(ctx), err)
+		return nil, fmt.Errorf("failed to query pending attempts for reconciliation: %w", err)
+	}
+	defer rows.Close()
+
+	var attempts []PaymentAttempt
+	for rows.Next() {
+		var att PaymentAttempt
+		if scanErr := rows.Scan(
+			&att.ID,
+			&att.OrderID,
+			&att.UserID,
+			&att.Provider,
+			&att.ProviderReference,
+			&att.AmountCents,
+			&att.Currency,
+			&att.Status,
+			&att.FailureReason,
+			&att.CreatedAt,
+			&att.UpdatedAt,
+			&att.CompletedAt,
+		); scanErr != nil {
+			return nil, fmt.Errorf("failed to scan pending attempt for reconciliation: %w", scanErr)
+		}
+		attempts = append(attempts, att)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating pending attempts for reconciliation: %w", err)
+	}
+
+	return attempts, nil
+}
+
+// ListAttemptsByUser returns a buyer's payment attempts ordered newest first along with the total matching count.
+func (r *Repository) ListAttemptsByUser(ctx context.Context, filter ListBuyerPaymentsFilter) ([]PaymentAttempt, int64, error) {
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+
+	q := r.querier(ctx)
+
+	var (
+		total    int64
+		countSQL string
+		listSQL  string
+		countArg []any
+		listArg  []any
+	)
+
+	if filter.Status != "" {
+		countSQL = `SELECT COUNT(*) FROM payment_attempts WHERE user_id::text = $1 AND status = $2`
+		countArg = []any{filter.UserID, string(filter.Status)}
+
+		listSQL = `
+			SELECT
+				id::text,
+				order_id::text,
+				user_id::text,
+				provider,
+				provider_reference,
+				amount_cents,
+				currency,
+				status,
+				failure_reason,
+				created_at,
+				updated_at,
+				completed_at
+			FROM payment_attempts
+			WHERE user_id::text = $1
+			  AND status = $2
+			ORDER BY created_at DESC, id DESC
+			LIMIT $3 OFFSET $4
+		`
+		listArg = []any{filter.UserID, string(filter.Status), pageSize, offset}
+	} else {
+		countSQL = `SELECT COUNT(*) FROM payment_attempts WHERE user_id::text = $1`
+		countArg = []any{filter.UserID}
+
+		listSQL = `
+			SELECT
+				id::text,
+				order_id::text,
+				user_id::text,
+				provider,
+				provider_reference,
+				amount_cents,
+				currency,
+				status,
+				failure_reason,
+				created_at,
+				updated_at,
+				completed_at
+			FROM payment_attempts
+			WHERE user_id::text = $1
+			ORDER BY created_at DESC, id DESC
+			LIMIT $2 OFFSET $3
+		`
+		listArg = []any{filter.UserID, pageSize, offset}
+	}
+
+	if err := q.QueryRow(ctx, countSQL, countArg...).Scan(&total); err != nil {
+		log.Printf("[req_id=%s] payment.Repository.ListAttemptsByUser count error (user_id=%s): %v", reqIDFromContext(ctx), filter.UserID, err)
+		return nil, 0, fmt.Errorf("failed to count buyer payment attempts: %w", err)
+	}
+
+	rows, err := q.Query(ctx, listSQL, listArg...)
+	if err != nil {
+		log.Printf("[req_id=%s] payment.Repository.ListAttemptsByUser query error (user_id=%s): %v", reqIDFromContext(ctx), filter.UserID, err)
+		return nil, 0, fmt.Errorf("failed to list buyer payment attempts: %w", err)
+	}
+	defer rows.Close()
+
+	attempts := make([]PaymentAttempt, 0)
+	for rows.Next() {
+		var att PaymentAttempt
+		if scanErr := rows.Scan(
+			&att.ID,
+			&att.OrderID,
+			&att.UserID,
+			&att.Provider,
+			&att.ProviderReference,
+			&att.AmountCents,
+			&att.Currency,
+			&att.Status,
+			&att.FailureReason,
+			&att.CreatedAt,
+			&att.UpdatedAt,
+			&att.CompletedAt,
+		); scanErr != nil {
+			return nil, 0, fmt.Errorf("failed to scan buyer payment attempt: %w", scanErr)
+		}
+		attempts = append(attempts, att)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating buyer payment attempts: %w", err)
+	}
+
+	return attempts, total, nil
 }
 
 // InsertEventIfNew inserts a payment_events record using ON CONFLICT (provider, provider_event_id) DO NOTHING.

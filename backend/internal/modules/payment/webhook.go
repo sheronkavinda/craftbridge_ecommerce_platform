@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// PaymentResult represents the verified payment outcome delivered to the order service after a webhook commits.
+// PaymentResult represents the verified payment outcome delivered to the order service after a webhook or reconciliation pass commits.
 type PaymentResult struct {
 	OrderID           string
 	AttemptID         string
@@ -126,7 +126,19 @@ func (s *Service) HandleWebhook(ctx context.Context, providerName string, input 
 		return nil, ErrAttemptNotFound
 	}
 
-	now := s.nowFn()
+	resp, _, err := s.applyVerifiedEvent(ctx, attempt, verified, s.nowFn())
+	return resp, err
+}
+
+// applyVerifiedEvent is the shared core state-machine, amount/currency verification, idempotent event persistence,
+// and OrderNotifier pipeline used by both HandleWebhook and ReconcilePendingAttempts.
+// It returns (WebhookResponse, transitioned bool, error).
+func (s *Service) applyVerifiedEvent(
+	ctx context.Context,
+	attempt *PaymentAttempt,
+	verified VerifiedEvent,
+	now time.Time,
+) (*WebhookResponse, bool, error) {
 	attemptIDCopy := attempt.ID
 	payloadJSON := json.RawMessage(verified.RawPayload)
 	if len(payloadJSON) == 0 {
@@ -152,14 +164,19 @@ func (s *Service) HandleWebhook(ctx context.Context, providerName string, input 
 				AttemptID:       &attemptIDCopy,
 				EventType:       mismatchEventType,
 				Payload:         payloadJSON,
-				SignatureValid:  true,
+				SignatureValid:  verified.SignatureValid,
 				ProcessedAt:     &now,
 				CreatedAt:       now,
 			})
 			if insErr != nil {
 				return insErr
 			}
-			// Keep attempt status unchanged; record the mismatch failure reason.
+
+			// Do not overwrite failure_reason if the attempt is already SUCCESS.
+			if attempt.Status == PaymentStatusSuccess {
+				return nil
+			}
+
 			_, updErr := s.repo.UpdateAttemptStatus(
 				txCtx,
 				attempt.ID,
@@ -171,10 +188,10 @@ func (s *Service) HandleWebhook(ctx context.Context, providerName string, input 
 			return updErr
 		})
 		if txErr != nil {
-			return nil, txErr
+			return nil, false, txErr
 		}
 
-		return nil, fmt.Errorf("%w: %s", ErrAmountMismatch, mismatchReason)
+		return nil, false, fmt.Errorf("%w: %s", ErrAmountMismatch, mismatchReason)
 	}
 
 	nextStatus, changed, late := TransitionAttemptStatus(attempt.Status, verified.Status)
@@ -210,7 +227,7 @@ func (s *Service) HandleWebhook(ctx context.Context, providerName string, input 
 			AttemptID:       &attemptIDCopy,
 			EventType:       eventType,
 			Payload:         payloadJSON,
-			SignatureValid:  true,
+			SignatureValid:  verified.SignatureValid,
 			ProcessedAt:     nil,
 			CreatedAt:       now,
 		})
@@ -239,7 +256,7 @@ func (s *Service) HandleWebhook(ctx context.Context, providerName string, input 
 		}
 
 		var failureReasonPtr *string
-		if (nextStatus == PaymentStatusFailed || nextStatus == PaymentStatusCancelled) && strings.TrimSpace(verified.FailureReason) != "" {
+		if nextStatus != PaymentStatusSuccess && strings.TrimSpace(verified.FailureReason) != "" {
 			reason := strings.TrimSpace(verified.FailureReason)
 			failureReasonPtr = &reason
 		}
@@ -270,14 +287,14 @@ func (s *Service) HandleWebhook(ctx context.Context, providerName string, input 
 		return s.repo.MarkEventProcessed(txCtx, verified.Provider, verified.ProviderEventID, now)
 	})
 	if txErr != nil {
-		return nil, txErr
+		return nil, false, txErr
 	}
 
 	if isDuplicateAlreadyProcessed {
-		return &WebhookResponse{Status: "duplicate"}, nil
+		return &WebhookResponse{Status: "duplicate"}, false, nil
 	}
 	if wasIgnored {
-		return &WebhookResponse{Status: "ignored"}, nil
+		return &WebhookResponse{Status: "ignored"}, false, nil
 	}
 
 	if shouldNotify || isDuplicateRetryNotify {
@@ -306,22 +323,22 @@ func (s *Service) HandleWebhook(ctx context.Context, providerName string, input 
 				Late:              late,
 			})
 			if notifyErr != nil {
-				// Leave processed_at NULL so a subsequent webhook retry will re-attempt notification.
+				// Leave processed_at NULL so a subsequent webhook/reconcile retry will re-attempt notification.
 				log.Printf(
-					"[req_id=%s] payment webhook notifier error (order_id=%s, attempt_id=%s, outcome=%s): %v",
+					"[req_id=%s] payment notifier error (order_id=%s, attempt_id=%s, outcome=%s): %v",
 					reqIDFromContext(ctx),
 					finalAttempt.OrderID,
 					finalAttempt.ID,
 					outcome,
 					notifyErr,
 				)
-				return &WebhookResponse{Status: "ok"}, nil
+				return &WebhookResponse{Status: "ok"}, shouldNotify, nil
 			}
 		}
 
 		if markErr := s.repo.MarkEventProcessed(ctx, verified.Provider, verified.ProviderEventID, now); markErr != nil {
 			log.Printf(
-				"[req_id=%s] payment webhook mark processed error (provider=%s, event_id=%s): %v",
+				"[req_id=%s] payment mark processed error (provider=%s, event_id=%s): %v",
 				reqIDFromContext(ctx),
 				verified.Provider,
 				verified.ProviderEventID,
@@ -331,13 +348,16 @@ func (s *Service) HandleWebhook(ctx context.Context, providerName string, input 
 	}
 
 	if isDuplicateRetryNotify {
-		return &WebhookResponse{Status: "duplicate"}, nil
+		return &WebhookResponse{Status: "duplicate"}, false, nil
 	}
-	return &WebhookResponse{Status: "ok"}, nil
+	return &WebhookResponse{Status: "ok"}, shouldNotify, nil
 }
 
 func isNotifierOutcome(status PaymentStatus) bool {
-	return status == PaymentStatusSuccess || status == PaymentStatusFailed || status == PaymentStatusCancelled
+	return status == PaymentStatusSuccess ||
+		status == PaymentStatusFailed ||
+		status == PaymentStatusCancelled ||
+		status == PaymentStatusExpired
 }
 
 func generateEventID() string {

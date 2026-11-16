@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	platformhttp "craftbridge/backend/internal/platform/http"
@@ -15,7 +16,7 @@ import (
 
 const maxWebhookBodyBytes = 64 * 1024
 
-// Handler exposes HTTP endpoints for payment operations and provider webhooks.
+// Handler exposes HTTP endpoints for payment operations, buyer history, reconciliation, and provider webhooks.
 type Handler struct {
 	service *Service
 }
@@ -40,6 +41,78 @@ func (h *Handler) InitiatePayment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"data": result})
+}
+
+// ListBuyerPayments handles GET /api/v1/me/payments.
+func (h *Handler) ListBuyerPayments(c *gin.Context) {
+	actor, reqID := extractVerifiedActor(c)
+	ctx := WithRequestID(c.Request.Context(), reqID)
+
+	page := 1
+	if rawPage := strings.TrimSpace(c.Query("page")); rawPage != "" {
+		parsed, err := strconv.Atoi(rawPage)
+		if err != nil || parsed < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page parameter"})
+			return
+		}
+		page = parsed
+	}
+
+	pageSize := 20
+	if rawPageSize := strings.TrimSpace(c.Query("page_size")); rawPageSize != "" {
+		parsed, err := strconv.Atoi(rawPageSize)
+		if err != nil || parsed < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page_size parameter"})
+			return
+		}
+		pageSize = parsed
+	}
+
+	statusParam := strings.TrimSpace(c.Query("status"))
+
+	items, meta, err := h.service.ListBuyerPayments(ctx, actor, statusParam, page, pageSize)
+	if err != nil {
+		handleServiceError(c, reqID, err, "failed to list buyer payments")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": items,
+		"meta": meta,
+	})
+}
+
+// GetBuyerPayment handles GET /api/v1/me/payments/:id.
+func (h *Handler) GetBuyerPayment(c *gin.Context) {
+	attemptID := strings.TrimSpace(c.Param("id"))
+	actor, reqID := extractVerifiedActor(c)
+	ctx := WithRequestID(c.Request.Context(), reqID)
+
+	item, err := h.service.GetBuyerPayment(ctx, actor, attemptID)
+	if err != nil {
+		if errors.Is(err, ErrAttemptNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": ErrAttemptNotFound.Error()})
+			return
+		}
+		handleServiceError(c, reqID, err, "failed to retrieve payment attempt")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": item})
+}
+
+// ReconcilePayments handles POST /api/v1/admin/payments/reconcile.
+func (h *Handler) ReconcilePayments(c *gin.Context) {
+	actor, reqID := extractVerifiedActor(c)
+	ctx := WithRequestID(c.Request.Context(), reqID)
+
+	summary, err := h.service.TriggerAdminReconcile(ctx, actor)
+	if err != nil {
+		handleServiceError(c, reqID, err, "failed to reconcile pending payments")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": summary})
 }
 
 // HandleWebhook handles POST /api/v1/webhooks/payments/:provider.

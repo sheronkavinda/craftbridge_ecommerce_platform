@@ -637,6 +637,35 @@ const openAPISpecJSON = `{
           "status_message": { "type": "string", "example": "Successfully received the VISA payment" },
           "method": { "type": "string", "example": "VISA" }
         }
+      },
+      "BuyerPaymentItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "att-1a2b3c4d5e6f7a8b" },
+          "order_id": { "type": "string", "example": "order-005" },
+          "order_number": { "type": "string", "example": "ORD-005" },
+          "order_status": { "type": "string", "example": "PAID" },
+          "status": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED", "EXPIRED", "CANCELLED"], "example": "SUCCESS" },
+          "amount_cents": { "type": "integer", "format": "int64", "example": 200000 },
+          "amount": { "type": "string", "example": "2000.00" },
+          "currency": { "type": "string", "example": "USD" },
+          "provider": { "type": "string", "example": "payhere_sandbox" },
+          "provider_reference": { "type": "string", "example": "3200251485" },
+          "public_reason": { "type": "string", "enum": ["payment_failed", "cancelled", "expired"], "example": "payment_failed" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ReconcileSummary": {
+        "type": "object",
+        "properties": {
+          "checked": { "type": "integer", "example": 3 },
+          "succeeded": { "type": "integer", "example": 1 },
+          "failed": { "type": "integer", "example": 1 },
+          "cancelled": { "type": "integer", "example": 0 },
+          "expired": { "type": "integer", "example": 1 },
+          "errors": { "type": "integer", "example": 0 }
+        }
       }
     }
   },
@@ -1164,6 +1193,67 @@ const openAPISpecJSON = `{
           "401": { "description": "Invalid webhook signature or merchant mismatch" },
           "404": { "description": "Unknown provider or payment attempt not found" },
           "422": { "description": "Payment amount or currency mismatch against stored attempt" }
+        }
+      }
+    },
+    "/api/v1/me/payments": {
+      "get": {
+        "tags": ["Payments"],
+        "summary": "List the authenticated buyer's payment attempts (newest first)",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED", "EXPIRED", "CANCELLED"] } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated buyer payment attempts with meta" },
+          "400": { "description": "Invalid pagination or status filter" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" }
+        }
+      }
+    },
+    "/api/v1/me/payments/{id}": {
+      "get": {
+        "tags": ["Payments"],
+        "summary": "Get a single buyer payment attempt by ID",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Payment attempt ID" }
+        ],
+        "responses": {
+          "200": { "description": "Buyer payment attempt detail with order summary" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Payment attempt not found" }
+        }
+      }
+    },
+    "/api/v1/admin/payments/reconcile": {
+      "post": {
+        "tags": ["Payments", "Admin - Refunds"],
+        "summary": "Trigger an immediate reconciliation pass for timed-out PENDING payment attempts",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation pass summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReconcileSummary" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (admin role required)" }
         }
       }
     }

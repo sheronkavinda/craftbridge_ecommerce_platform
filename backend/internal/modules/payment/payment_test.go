@@ -81,7 +81,9 @@ func (f *fakePaymentRepo) UpdateAttemptStatus(
 		refCopy := *providerRef
 		att.ProviderReference = &refCopy
 	}
-	if failureReason != nil {
+	if status == PaymentStatusSuccess {
+		att.FailureReason = nil
+	} else if failureReason != nil {
 		reasonCopy := *failureReason
 		att.FailureReason = &reasonCopy
 	}
@@ -92,6 +94,67 @@ func (f *fakePaymentRepo) UpdateAttemptStatus(
 	att.UpdatedAt = time.Now().UTC()
 	cp := *att
 	return &cp, nil
+}
+
+func (f *fakePaymentRepo) ClaimPendingAttemptsForReconcile(_ context.Context, olderThan time.Time, limit int) ([]PaymentAttempt, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 50
+	}
+	var out []PaymentAttempt
+	for _, att := range f.attempts {
+		if att == nil || att.Status != PaymentStatusPending {
+			continue
+		}
+		if !att.CreatedAt.After(olderThan) {
+			out = append(out, *att)
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *fakePaymentRepo) ListAttemptsByUser(_ context.Context, filter ListBuyerPaymentsFilter) ([]PaymentAttempt, int64, error) {
+	var matched []PaymentAttempt
+	for _, att := range f.attempts {
+		if att == nil || !strings.EqualFold(att.UserID, filter.UserID) {
+			continue
+		}
+		if filter.Status != "" && att.Status != filter.Status {
+			continue
+		}
+		matched = append(matched, *att)
+	}
+
+	// Sort newest first by CreatedAt DESC, ID DESC
+	for i := 0; i < len(matched); i++ {
+		for j := i + 1; j < len(matched); j++ {
+			if matched[j].CreatedAt.After(matched[i].CreatedAt) ||
+				(matched[j].CreatedAt.Equal(matched[i].CreatedAt) && matched[j].ID > matched[i].ID) {
+				matched[i], matched[j] = matched[j], matched[i]
+			}
+		}
+	}
+
+	total := int64(len(matched))
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+	if offset >= len(matched) {
+		return []PaymentAttempt{}, total, nil
+	}
+	end := offset + pageSize
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], total, nil
 }
 
 func (f *fakePaymentRepo) InsertEventIfNew(_ context.Context, event PaymentEvent) (bool, *time.Time, error) {
@@ -215,12 +278,12 @@ func TestPayHereSandboxProvider_HashAndSecretProtection(t *testing.T) {
 		t.Fatalf("merchant secret leaked in InitiateResult JSON: %s", string(serialized))
 	}
 
-	// VerifyNotification on empty input returns ErrMalformedNotification; QueryStatus returns ErrNotImplemented
+	// VerifyNotification on empty input returns ErrMalformedNotification; QueryStatus without AppID/AppSecret returns ErrProviderNotConfigured
 	if _, err := provider.VerifyNotification(NotificationInput{}); !errors.Is(err, ErrMalformedNotification) {
 		t.Errorf("VerifyNotification got err %v, want ErrMalformedNotification", err)
 	}
-	if _, err := provider.QueryStatus(context.Background(), attemptID); !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("QueryStatus got err %v, want ErrNotImplemented", err)
+	if _, err := provider.QueryStatus(context.Background(), attemptID); !errors.Is(err, ErrProviderNotConfigured) {
+		t.Errorf("QueryStatus got err %v, want ErrProviderNotConfigured", err)
 	}
 }
 

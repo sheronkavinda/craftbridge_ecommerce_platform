@@ -4,17 +4,26 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"craftbridge/backend/internal/platform/config"
 )
 
-const defaultPayHereCheckoutURL = "https://sandbox.payhere.lk/pay/checkout"
+const (
+	defaultPayHereCheckoutURL = "https://sandbox.payhere.lk/pay/checkout"
+	defaultPayHereAPIBaseURL  = "https://sandbox.payhere.lk"
+	defaultPayHereHTTPTimeout = 10 * time.Second
+)
 
 // PayHereSandboxConfig holds the gateway settings required by the PayHere sandbox adapter.
 type PayHereSandboxConfig struct {
@@ -24,9 +33,13 @@ type PayHereSandboxConfig struct {
 	ReturnURL      string
 	CancelURL      string
 	NotifyURL      string
+	AppID          string
+	AppSecret      string
+	APIBaseURL     string
+	HTTPClient     HTTPDoer
 }
 
-// PayHereSandboxProvider implements PaymentProvider for the PayHere sandbox checkout flow.
+// PayHereSandboxProvider implements PaymentProvider for the PayHere sandbox checkout and retrieval flows.
 type PayHereSandboxProvider struct {
 	cfg PayHereSandboxConfig
 }
@@ -43,6 +56,9 @@ func NewPayHereSandboxProvider(appCfg *config.Config) *PayHereSandboxProvider {
 		ReturnURL:      appCfg.PaymentReturnURL,
 		CancelURL:      appCfg.PaymentCancelURL,
 		NotifyURL:      appCfg.PaymentNotifyURL,
+		AppID:          appCfg.PayHereAppID,
+		AppSecret:      appCfg.PayHereAppSecret,
+		APIBaseURL:     appCfg.PayHereAPIBaseURL,
 	})
 }
 
@@ -52,6 +68,15 @@ func NewPayHereSandboxProviderFromConfig(cfg PayHereSandboxConfig) *PayHereSandb
 	if checkoutURL == "" {
 		checkoutURL = defaultPayHereCheckoutURL
 	}
+	apiBaseURL := strings.TrimRight(strings.TrimSpace(cfg.APIBaseURL), "/")
+	if apiBaseURL == "" {
+		apiBaseURL = defaultPayHereAPIBaseURL
+	}
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: defaultPayHereHTTPTimeout}
+	}
+
 	return &PayHereSandboxProvider{
 		cfg: PayHereSandboxConfig{
 			MerchantID:     strings.TrimSpace(cfg.MerchantID),
@@ -60,6 +85,10 @@ func NewPayHereSandboxProviderFromConfig(cfg PayHereSandboxConfig) *PayHereSandb
 			ReturnURL:      strings.TrimSpace(cfg.ReturnURL),
 			CancelURL:      strings.TrimSpace(cfg.CancelURL),
 			NotifyURL:      strings.TrimSpace(cfg.NotifyURL),
+			AppID:          strings.TrimSpace(cfg.AppID),
+			AppSecret:      strings.TrimSpace(cfg.AppSecret),
+			APIBaseURL:     apiBaseURL,
+			HTTPClient:     httpClient,
 		},
 	}
 }
@@ -91,7 +120,7 @@ func (p *PayHereSandboxProvider) InitiatePayment(_ context.Context, req Initiate
 		currency = "USD"
 	}
 
-	amountFormatted := fmt.Sprintf("%.2f", float64(req.AmountCents)/100.0)
+	amountFormatted := FormatCentsDecimal(req.AmountCents)
 	hash := ComputePayHereHash(p.cfg.MerchantID, providerRef, amountFormatted, currency, p.cfg.MerchantSecret)
 
 	items := strings.TrimSpace(req.Items)
@@ -233,9 +262,207 @@ func (p *PayHereSandboxProvider) VerifyNotification(input NotificationInput) (Ve
 	}, nil
 }
 
-// QueryStatus is implemented in a subsequent step.
-func (p *PayHereSandboxProvider) QueryStatus(_ context.Context, _ string) (ProviderStatus, error) {
-	return ProviderStatus{}, ErrNotImplemented
+// QueryStatus queries PayHere's Merchant Retrieval API for the status of a payment attempt.
+// Note: Secrets and access tokens are never included in returned errors or logs.
+func (p *PayHereSandboxProvider) QueryStatus(ctx context.Context, providerRef string) (ProviderStatus, error) {
+	if p == nil || p.cfg.AppID == "" || p.cfg.AppSecret == "" {
+		return ProviderStatus{}, ErrProviderNotConfigured
+	}
+
+	trimmedRef := strings.TrimSpace(providerRef)
+	if trimmedRef == "" {
+		return ProviderStatus{}, fmt.Errorf("%w: attempt reference is required", ErrInvalidPaymentInput)
+	}
+
+	client := p.cfg.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: defaultPayHereHTTPTimeout}
+	}
+
+	baseURL := strings.TrimRight(p.cfg.APIBaseURL, "/")
+	if baseURL == "" {
+		baseURL = defaultPayHereAPIBaseURL
+	}
+
+	accessToken, err := p.fetchOAuthToken(ctx, client, baseURL)
+	if err != nil {
+		return ProviderStatus{}, err
+	}
+
+	searchURL := fmt.Sprintf("%s/merchant/v1/payment/search?order_id=%s", baseURL, url.QueryEscape(trimmedRef))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
+	if err != nil {
+		return ProviderStatus{}, fmt.Errorf("failed to build payhere search request")
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return ProviderStatus{}, fmt.Errorf("payhere payment search request failed")
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return ProviderStatus{}, fmt.Errorf("failed to read payhere search response")
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ProviderStatus{
+			ProviderReference: trimmedRef,
+			Status:            PaymentStatusPending,
+		}, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ProviderStatus{}, fmt.Errorf("payhere search returned HTTP %d", resp.StatusCode)
+	}
+
+	return parsePayHereSearchResponse(trimmedRef, bodyBytes)
+}
+
+func (p *PayHereSandboxProvider) fetchOAuthToken(ctx context.Context, client HTTPDoer, baseURL string) (string, error) {
+	tokenURL := baseURL + "/merchant/v1/oauth/token"
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		tokenURL,
+		strings.NewReader("grant_type=client_credentials"),
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to build payhere oauth request")
+	}
+
+	basicAuth := base64.StdEncoding.EncodeToString([]byte(p.cfg.AppID + ":" + p.cfg.AppSecret))
+	req.Header.Set("Authorization", "Basic "+basicAuth)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("payhere oauth request failed")
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
+	if err != nil {
+		return "", fmt.Errorf("failed to read payhere oauth response")
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("payhere oauth returned HTTP %d", resp.StatusCode)
+	}
+
+	var tokenPayload struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(bodyBytes, &tokenPayload); err != nil {
+		return "", fmt.Errorf("invalid payhere oauth response JSON")
+	}
+
+	token := strings.TrimSpace(tokenPayload.AccessToken)
+	if token == "" {
+		return "", fmt.Errorf("payhere oauth response missing access_token")
+	}
+	return token, nil
+}
+
+func parsePayHereSearchResponse(fallbackRef string, bodyBytes []byte) (ProviderStatus, error) {
+	var envelope struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &envelope); err != nil {
+		return ProviderStatus{}, fmt.Errorf("invalid payhere search response JSON")
+	}
+
+	if len(envelope.Data) == 0 {
+		return ProviderStatus{
+			ProviderReference: fallbackRef,
+			Status:            PaymentStatusPending,
+		}, nil
+	}
+
+	// Select the first RECEIVED record if present, otherwise the first record in data.
+	selected := envelope.Data[0]
+	for _, item := range envelope.Data {
+		if strings.EqualFold(extractAnyString(item, "status"), "RECEIVED") {
+			selected = item
+			break
+		}
+	}
+
+	rawStatus := strings.ToUpper(extractAnyString(selected, "status"))
+	var mappedStatus PaymentStatus
+	var failureReason string
+
+	switch rawStatus {
+	case "RECEIVED", "SUCCESS":
+		mappedStatus = PaymentStatusSuccess
+	case "CANCELED", "CANCELLED":
+		mappedStatus = PaymentStatusCancelled
+		failureReason = "cancelled"
+	case "FAILED":
+		mappedStatus = PaymentStatusFailed
+		failureReason = "payment_failed"
+	case "PENDING", "":
+		mappedStatus = PaymentStatusPending
+	default:
+		mappedStatus = PaymentStatusPending
+	}
+
+	paymentID := extractAnyString(selected, "payment_id", "id")
+	if paymentID == "" {
+		paymentID = fallbackRef
+	}
+
+	currency := strings.ToUpper(extractAnyString(selected, "currency", "payhere_currency"))
+	amountCents, _ := extractAnyAmountCents(selected, "amount", "payhere_amount")
+
+	return ProviderStatus{
+		ProviderReference: paymentID,
+		Status:            mappedStatus,
+		AmountCents:       amountCents,
+		Currency:          currency,
+		FailureReason:     failureReason,
+	}, nil
+}
+
+func extractAnyString(m map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if raw, ok := m[k]; ok && raw != nil {
+			switch v := raw.(type) {
+			case string:
+				if s := strings.TrimSpace(v); s != "" {
+					return s
+				}
+			case float64:
+				return strconv.FormatInt(int64(v), 10)
+			case int64:
+				return strconv.FormatInt(v, 10)
+			}
+		}
+	}
+	return ""
+}
+
+func extractAnyAmountCents(m map[string]any, keys ...string) (int64, error) {
+	for _, k := range keys {
+		if raw, ok := m[k]; ok && raw != nil {
+			switch v := raw.(type) {
+			case string:
+				return ParseDecimalToCents(v)
+			case float64:
+				return ParseDecimalToCents(fmt.Sprintf("%.2f", v))
+			case int64:
+				return v * 100, nil
+			}
+		}
+	}
+	return 0, nil
 }
 
 // ComputePayHereHash computes the PayHere checkout signature:
@@ -252,6 +479,15 @@ func ComputePayHereNotifySig(merchantID, orderID, payhereAmount, payhereCurrency
 	hashedSecret := strings.ToUpper(md5Hex(merchantSecret))
 	payload := merchantID + orderID + payhereAmount + payhereCurrency + statusCode + hashedSecret
 	return strings.ToUpper(md5Hex(payload))
+}
+
+// FormatCentsDecimal formats integer cents as a 2-decimal string (e.g. 200000 -> "2000.00") without floating-point math.
+func FormatCentsDecimal(cents int64) string {
+	if cents < 0 {
+		abs := -cents
+		return fmt.Sprintf("-%d.%02d", abs/100, abs%100)
+	}
+	return fmt.Sprintf("%d.%02d", cents/100, cents%100)
 }
 
 // ParseDecimalToCents parses a positive or zero decimal amount string (with up to 2 decimal places,

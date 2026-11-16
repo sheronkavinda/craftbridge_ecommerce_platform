@@ -17,8 +17,8 @@ var (
 	ErrInvalidPaymentInput = errors.New("invalid payment input")
 	// ErrUnauthorized indicates that the caller is not authenticated.
 	ErrUnauthorized = errors.New("authentication required")
-	// ErrForbidden indicates that the authenticated caller does not have the required buyer role.
-	ErrForbidden = errors.New("forbidden: buyer role required")
+	// ErrForbidden indicates that the authenticated caller does not have the required role.
+	ErrForbidden = errors.New("forbidden: insufficient role permissions")
 	// ErrOrderNotPayable indicates that the order is not in a pending-payment status.
 	ErrOrderNotPayable = errors.New("order is not pending payment")
 	// ErrUnknownProvider indicates that a webhook was received for an unregistered payment provider.
@@ -40,6 +40,8 @@ type RepositoryStore interface {
 		failureReason *string,
 		completedAt *time.Time,
 	) (*PaymentAttempt, error)
+	ClaimPendingAttemptsForReconcile(ctx context.Context, olderThan time.Time, limit int) ([]PaymentAttempt, error)
+	ListAttemptsByUser(ctx context.Context, filter ListBuyerPaymentsFilter) ([]PaymentAttempt, int64, error)
 	InsertEventIfNew(ctx context.Context, event PaymentEvent) (bool, *time.Time, error)
 	MarkEventProcessed(ctx context.Context, provider, providerEventID string, processedAt time.Time) error
 }
@@ -55,15 +57,19 @@ func (noopTxRunner) RunInTx(ctx context.Context, fn func(txCtx context.Context) 
 	return fn(ctx)
 }
 
-// Service implements payment initiation, idempotency/reuse of recent pending attempts, and webhook verification.
+// Service implements payment initiation, idempotency/reuse of recent pending attempts, webhook verification,
+// reconciliation of timed-out pending attempts, and buyer payment history queries.
 type Service struct {
-	repo      RepositoryStore
-	txRunner  TxRunner
-	orders    OrderReader
-	provider  PaymentProvider
-	providers map[string]PaymentProvider
-	notifier  OrderNotifier
-	nowFn     func() time.Time
+	repo           RepositoryStore
+	txRunner       TxRunner
+	orders         OrderReader
+	provider       PaymentProvider
+	providers      map[string]PaymentProvider
+	notifier       OrderNotifier
+	auditRecorder  AuditRecorder
+	reconcileAfter time.Duration
+	attemptTTL     time.Duration
+	nowFn          func() time.Time
 }
 
 // NewService creates a new payment service.
@@ -85,30 +91,47 @@ func NewService(repo RepositoryStore, orders OrderReader, provider PaymentProvid
 	}
 
 	return &Service{
-		repo:      repo,
-		txRunner:  runner,
-		orders:    orders,
-		provider:  provider,
-		providers: providers,
-		notifier:  NewLogOrderNotifier(),
+		repo:           repo,
+		txRunner:       runner,
+		orders:         orders,
+		provider:       provider,
+		providers:      providers,
+		notifier:       NewLogOrderNotifier(),
+		reconcileAfter: defaultReconcileAfterMinutes * time.Minute,
+		attemptTTL:     defaultAttemptTTLHours * time.Hour,
 		nowFn: func() time.Time {
 			return time.Now().UTC()
 		},
 	}
 }
 
-// SetNotifier configures the OrderNotifier used to notify the order service after verified webhooks.
+// SetNotifier configures the OrderNotifier used to notify the order service after verified webhooks or reconciliations.
 func (s *Service) SetNotifier(notifier OrderNotifier) {
 	if notifier != nil {
 		s.notifier = notifier
 	}
 }
 
-// SetTxRunner configures the transaction runner used by webhook processing.
+// SetTxRunner configures the transaction runner used by webhook and reconciliation processing.
 func (s *Service) SetTxRunner(runner TxRunner) {
 	if runner != nil {
 		s.txRunner = runner
 	}
+}
+
+// SetReconcileConfig configures the age threshold before PENDING attempts are reconciled and their expiration TTL.
+func (s *Service) SetReconcileConfig(reconcileAfter, attemptTTL time.Duration) {
+	if reconcileAfter > 0 {
+		s.reconcileAfter = reconcileAfter
+	}
+	if attemptTTL > 0 {
+		s.attemptTTL = attemptTTL
+	}
+}
+
+// SetAuditRecorder configures an optional AuditRecorder for administrative payment operations.
+func (s *Service) SetAuditRecorder(recorder AuditRecorder) {
+	s.auditRecorder = recorder
 }
 
 // RegisterProvider registers a PaymentProvider in the webhook provider registry by name.
@@ -258,6 +281,187 @@ func (s *Service) InitiatePayment(ctx context.Context, actor Actor, orderID stri
 			Fields:      initRes.Fields,
 		},
 	}, nil
+}
+
+// ListBuyerPayments returns a paginated list of the authenticated buyer's payment attempts (newest first).
+func (s *Service) ListBuyerPayments(
+	ctx context.Context,
+	actor Actor,
+	rawStatus string,
+	page int,
+	pageSize int,
+) ([]BuyerPaymentItem, PaginationMeta, error) {
+	actorID := strings.TrimSpace(actor.ID)
+	if actorID == "" {
+		return nil, PaginationMeta{}, ErrUnauthorized
+	}
+	if !strings.EqualFold(strings.TrimSpace(actor.Role), "BUYER") {
+		return nil, PaginationMeta{}, ErrForbidden
+	}
+
+	if page < 1 {
+		return nil, PaginationMeta{}, fmt.Errorf("%w: page must be >= 1", ErrInvalidPaymentInput)
+	}
+	if pageSize < 1 {
+		return nil, PaginationMeta{}, fmt.Errorf("%w: page_size must be >= 1", ErrInvalidPaymentInput)
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	var statusFilter PaymentStatus
+	if trimmedStatus := strings.ToUpper(strings.TrimSpace(rawStatus)); trimmedStatus != "" {
+		candidate := PaymentStatus(trimmedStatus)
+		if !IsValidPaymentStatus(candidate) {
+			return nil, PaginationMeta{}, fmt.Errorf("%w: invalid payment status filter", ErrInvalidPaymentInput)
+		}
+		statusFilter = candidate
+	}
+
+	attempts, total, err := s.repo.ListAttemptsByUser(ctx, ListBuyerPaymentsFilter{
+		UserID:   actorID,
+		Status:   statusFilter,
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		return nil, PaginationMeta{}, err
+	}
+
+	orderCache := make(map[string]OrderForPayment)
+	items := make([]BuyerPaymentItem, 0, len(attempts))
+	for _, att := range attempts {
+		var ord OrderForPayment
+		if cached, ok := orderCache[att.OrderID]; ok {
+			ord = cached
+		} else if s.orders != nil {
+			if loaded, ordErr := s.orders.GetOrderForPayment(ctx, att.OrderID); ordErr == nil {
+				ord = loaded
+				orderCache[att.OrderID] = loaded
+			}
+		}
+
+		items = append(items, toBuyerPaymentItem(att, ord.OrderNumber, ""))
+	}
+
+	return items, PaginationMeta{
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
+}
+
+// GetBuyerPayment returns a single payment attempt belonging to the authenticated buyer, enriched with order summary fields.
+// If the attempt does not exist or belongs to another user, ErrAttemptNotFound (HTTP 404) is returned without leaking existence.
+func (s *Service) GetBuyerPayment(ctx context.Context, actor Actor, attemptID string) (*BuyerPaymentItem, error) {
+	actorID := strings.TrimSpace(actor.ID)
+	if actorID == "" {
+		return nil, ErrUnauthorized
+	}
+	if !strings.EqualFold(strings.TrimSpace(actor.Role), "BUYER") {
+		return nil, ErrForbidden
+	}
+
+	trimmedID := strings.TrimSpace(attemptID)
+	if trimmedID == "" || len(trimmedID) > 64 {
+		return nil, ErrAttemptNotFound
+	}
+
+	att, err := s.repo.GetAttemptByID(ctx, trimmedID)
+	if err != nil {
+		if errors.Is(err, ErrAttemptNotFound) {
+			return nil, ErrAttemptNotFound
+		}
+		return nil, err
+	}
+	if att == nil || !strings.EqualFold(strings.TrimSpace(att.UserID), actorID) {
+		return nil, ErrAttemptNotFound
+	}
+
+	var orderNumber, orderStatus string
+	if s.orders != nil {
+		if ord, ordErr := s.orders.GetOrderForPayment(ctx, att.OrderID); ordErr == nil {
+			orderNumber = ord.OrderNumber
+			orderStatus = ord.Status
+		}
+	}
+
+	item := toBuyerPaymentItem(*att, orderNumber, orderStatus)
+	return &item, nil
+}
+
+// TriggerAdminReconcile validates the admin caller, runs a single pending-payment reconciliation pass,
+// and records an audit trail entry if an AuditRecorder is configured.
+func (s *Service) TriggerAdminReconcile(ctx context.Context, actor Actor) (*ReconcileSummary, error) {
+	actorID := strings.TrimSpace(actor.ID)
+	if actorID == "" {
+		return nil, ErrUnauthorized
+	}
+	if !strings.EqualFold(strings.TrimSpace(actor.Role), "ADMIN") {
+		return nil, ErrForbidden
+	}
+
+	summary, err := s.ReconcilePendingAttempts(ctx, s.nowFn())
+	if err != nil {
+		if s.auditRecorder != nil {
+			s.auditRecorder.RecordAdminAction(
+				ctx,
+				actor,
+				reqIDFromContext(ctx),
+				"PAYMENT_RECONCILE_RUN",
+				"payment_attempts:pending",
+				"FAILURE",
+				"admin payment reconciliation pass failed",
+			)
+		}
+		return nil, err
+	}
+
+	if s.auditRecorder != nil && summary != nil {
+		details := fmt.Sprintf(
+			"reconcile pass completed: checked=%d succeeded=%d failed=%d cancelled=%d expired=%d errors=%d",
+			summary.Checked,
+			summary.Succeeded,
+			summary.Failed,
+			summary.Cancelled,
+			summary.Expired,
+			summary.Errors,
+		)
+		s.auditRecorder.RecordAdminAction(
+			ctx,
+			actor,
+			reqIDFromContext(ctx),
+			"PAYMENT_RECONCILE_RUN",
+			"payment_attempts:pending",
+			"SUCCESS",
+			details,
+		)
+	}
+
+	return summary, nil
+}
+
+func toBuyerPaymentItem(att PaymentAttempt, orderNumber, orderStatus string) BuyerPaymentItem {
+	resolvedOrderNum := strings.TrimSpace(orderNumber)
+	if resolvedOrderNum == "" {
+		resolvedOrderNum = att.OrderID
+	}
+
+	return BuyerPaymentItem{
+		ID:                att.ID,
+		OrderID:           att.OrderID,
+		OrderNumber:       resolvedOrderNum,
+		OrderStatus:       strings.TrimSpace(orderStatus),
+		Status:            att.Status,
+		AmountCents:       att.AmountCents,
+		Amount:            FormatCentsDecimal(att.AmountCents),
+		Currency:          att.Currency,
+		Provider:          att.Provider,
+		ProviderReference: att.ProviderReference,
+		PublicReason:      PublicFailureReason(att.Status),
+		CreatedAt:         att.CreatedAt,
+		CompletedAt:       att.CompletedAt,
+	}
 }
 
 func generateAttemptID() string {
