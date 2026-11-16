@@ -77,3 +77,8 @@ type InitiatePaymentResponse struct {
 	Status    PaymentStatus      `json:"status"`
 	Checkout  CheckoutDescriptor `json:"checkout"`
 }
+
+// WebhookResponse represents the payload returned by POST /api/v1/webhooks/payments/:provider.
+type WebhookResponse struct {
+	Status string `json:"status"`
+}

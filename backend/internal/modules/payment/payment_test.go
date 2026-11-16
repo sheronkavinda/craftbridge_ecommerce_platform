@@ -25,6 +25,8 @@ type fakePaymentRepo struct {
 	latestErr       error
 	createdAttempts []PaymentAttempt
 	createErr       error
+	attempts        map[string]*PaymentAttempt
+	events          map[string]*PaymentEvent
 }
 
 func (f *fakePaymentRepo) GetLatestPendingAttemptByOrder(_ context.Context, _ string) (*PaymentAttempt, error) {
@@ -42,7 +44,79 @@ func (f *fakePaymentRepo) CreateAttempt(_ context.Context, attempt PaymentAttemp
 	attempt.CreatedAt = now
 	attempt.UpdatedAt = now
 	f.createdAttempts = append(f.createdAttempts, attempt)
+	if f.attempts != nil {
+		cp := attempt
+		f.attempts[attempt.ID] = &cp
+	}
 	return &attempt, nil
+}
+
+func (f *fakePaymentRepo) GetAttemptByID(_ context.Context, attemptID string) (*PaymentAttempt, error) {
+	if f.attempts != nil {
+		if att, ok := f.attempts[attemptID]; ok && att != nil {
+			cp := *att
+			return &cp, nil
+		}
+	}
+	return nil, ErrAttemptNotFound
+}
+
+func (f *fakePaymentRepo) UpdateAttemptStatus(
+	_ context.Context,
+	attemptID string,
+	status PaymentStatus,
+	providerRef *string,
+	failureReason *string,
+	completedAt *time.Time,
+) (*PaymentAttempt, error) {
+	if f.attempts == nil {
+		return nil, ErrAttemptNotFound
+	}
+	att, ok := f.attempts[attemptID]
+	if !ok || att == nil {
+		return nil, ErrAttemptNotFound
+	}
+	att.Status = status
+	if providerRef != nil {
+		refCopy := *providerRef
+		att.ProviderReference = &refCopy
+	}
+	if failureReason != nil {
+		reasonCopy := *failureReason
+		att.FailureReason = &reasonCopy
+	}
+	if completedAt != nil {
+		compCopy := *completedAt
+		att.CompletedAt = &compCopy
+	}
+	att.UpdatedAt = time.Now().UTC()
+	cp := *att
+	return &cp, nil
+}
+
+func (f *fakePaymentRepo) InsertEventIfNew(_ context.Context, event PaymentEvent) (bool, *time.Time, error) {
+	if f.events == nil {
+		f.events = make(map[string]*PaymentEvent)
+	}
+	key := event.Provider + "|" + event.ProviderEventID
+	if existing, ok := f.events[key]; ok {
+		return false, existing.ProcessedAt, nil
+	}
+	cp := event
+	f.events[key] = &cp
+	return true, nil, nil
+}
+
+func (f *fakePaymentRepo) MarkEventProcessed(_ context.Context, provider, providerEventID string, processedAt time.Time) error {
+	if f.events == nil {
+		return nil
+	}
+	key := provider + "|" + providerEventID
+	if existing, ok := f.events[key]; ok {
+		ts := processedAt
+		existing.ProcessedAt = &ts
+	}
+	return nil
 }
 
 type fakeOrderReader struct {
@@ -141,9 +215,9 @@ func TestPayHereSandboxProvider_HashAndSecretProtection(t *testing.T) {
 		t.Fatalf("merchant secret leaked in InitiateResult JSON: %s", string(serialized))
 	}
 
-	// VerifyNotification and QueryStatus must return ErrNotImplemented in Step 2
-	if _, err := provider.VerifyNotification(NotificationInput{}); !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("VerifyNotification got err %v, want ErrNotImplemented", err)
+	// VerifyNotification on empty input returns ErrMalformedNotification; QueryStatus returns ErrNotImplemented
+	if _, err := provider.VerifyNotification(NotificationInput{}); !errors.Is(err, ErrMalformedNotification) {
+		t.Errorf("VerifyNotification got err %v, want ErrMalformedNotification", err)
 	}
 	if _, err := provider.QueryStatus(context.Background(), attemptID); !errors.Is(err, ErrNotImplemented) {
 		t.Errorf("QueryStatus got err %v, want ErrNotImplemented", err)

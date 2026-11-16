@@ -21,12 +21,27 @@ var (
 	ErrForbidden = errors.New("forbidden: buyer role required")
 	// ErrOrderNotPayable indicates that the order is not in a pending-payment status.
 	ErrOrderNotPayable = errors.New("order is not pending payment")
+	// ErrUnknownProvider indicates that a webhook was received for an unregistered payment provider.
+	ErrUnknownProvider = errors.New("unknown payment provider")
+	// ErrAmountMismatch indicates that a webhook's amount or currency does not match the stored payment attempt.
+	ErrAmountMismatch = errors.New("payment amount or currency mismatch")
 )
 
 // RepositoryStore defines the persistence contract required by the payment service.
 type RepositoryStore interface {
 	GetLatestPendingAttemptByOrder(ctx context.Context, orderID string) (*PaymentAttempt, error)
 	CreateAttempt(ctx context.Context, attempt PaymentAttempt) (*PaymentAttempt, error)
+	GetAttemptByID(ctx context.Context, attemptID string) (*PaymentAttempt, error)
+	UpdateAttemptStatus(
+		ctx context.Context,
+		attemptID string,
+		status PaymentStatus,
+		providerRef *string,
+		failureReason *string,
+		completedAt *time.Time,
+	) (*PaymentAttempt, error)
+	InsertEventIfNew(ctx context.Context, event PaymentEvent) (bool, *time.Time, error)
+	MarkEventProcessed(ctx context.Context, provider, providerEventID string, processedAt time.Time) error
 }
 
 // OrderReader defines the contract for reading order payment metadata without coupling to Member 04's internal types.
@@ -34,23 +49,76 @@ type OrderReader interface {
 	GetOrderForPayment(ctx context.Context, orderID string) (OrderForPayment, error)
 }
 
-// Service implements payment initiation, idempotency/reuse of recent pending attempts, and gateway delegation.
+type noopTxRunner struct{}
+
+func (noopTxRunner) RunInTx(ctx context.Context, fn func(txCtx context.Context) error) error {
+	return fn(ctx)
+}
+
+// Service implements payment initiation, idempotency/reuse of recent pending attempts, and webhook verification.
 type Service struct {
-	repo     RepositoryStore
-	orders   OrderReader
-	provider PaymentProvider
-	nowFn    func() time.Time
+	repo      RepositoryStore
+	txRunner  TxRunner
+	orders    OrderReader
+	provider  PaymentProvider
+	providers map[string]PaymentProvider
+	notifier  OrderNotifier
+	nowFn     func() time.Time
 }
 
 // NewService creates a new payment service.
 func NewService(repo RepositoryStore, orders OrderReader, provider PaymentProvider) *Service {
+	var runner TxRunner = noopTxRunner{}
+	if tr, ok := repo.(TxRunner); ok && tr != nil {
+		runner = tr
+	}
+
+	providers := make(map[string]PaymentProvider)
+	if provider != nil {
+		name := strings.ToLower(strings.TrimSpace(provider.Name()))
+		if name != "" {
+			providers[name] = provider
+		}
+		if name == "payhere_sandbox" {
+			providers["payhere"] = provider
+		}
+	}
+
 	return &Service{
-		repo:     repo,
-		orders:   orders,
-		provider: provider,
+		repo:      repo,
+		txRunner:  runner,
+		orders:    orders,
+		provider:  provider,
+		providers: providers,
+		notifier:  NewLogOrderNotifier(),
 		nowFn: func() time.Time {
 			return time.Now().UTC()
 		},
+	}
+}
+
+// SetNotifier configures the OrderNotifier used to notify the order service after verified webhooks.
+func (s *Service) SetNotifier(notifier OrderNotifier) {
+	if notifier != nil {
+		s.notifier = notifier
+	}
+}
+
+// SetTxRunner configures the transaction runner used by webhook processing.
+func (s *Service) SetTxRunner(runner TxRunner) {
+	if runner != nil {
+		s.txRunner = runner
+	}
+}
+
+// RegisterProvider registers a PaymentProvider in the webhook provider registry by name.
+func (s *Service) RegisterProvider(name string, provider PaymentProvider) {
+	if s.providers == nil {
+		s.providers = make(map[string]PaymentProvider)
+	}
+	key := strings.ToLower(strings.TrimSpace(name))
+	if key != "" && provider != nil {
+		s.providers[key] = provider
 	}
 }
 

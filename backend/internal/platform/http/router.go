@@ -622,6 +622,21 @@ const openAPISpecJSON = `{
             }
           }
         }
+      },
+      "PayHereWebhookNotification": {
+        "type": "object",
+        "required": ["merchant_id", "order_id", "payhere_amount", "payhere_currency", "status_code", "md5sig"],
+        "properties": {
+          "merchant_id": { "type": "string", "example": "1211149" },
+          "order_id": { "type": "string", "description": "CraftBridge payment attempt ID", "example": "att-1a2b3c4d5e6f7a8b" },
+          "payment_id": { "type": "string", "example": "3200251485" },
+          "payhere_amount": { "type": "string", "example": "2000.00" },
+          "payhere_currency": { "type": "string", "example": "USD" },
+          "status_code": { "type": "string", "enum": ["2", "0", "-1", "-2", "-3"], "example": "2" },
+          "md5sig": { "type": "string", "example": "E5F8A9C1D2B3E4F5A6B7C8D9E0F1A2B3" },
+          "status_message": { "type": "string", "example": "Successfully received the VISA payment" },
+          "method": { "type": "string", "example": "VISA" }
+        }
       }
     }
   },
@@ -1124,6 +1139,31 @@ const openAPISpecJSON = `{
           "404": { "description": "Order not found" },
           "409": { "description": "Order is not pending payment" },
           "503": { "description": "Payment provider not configured" }
+        }
+      }
+    },
+    "/api/v1/webhooks/payments/{provider}": {
+      "post": {
+        "tags": ["Payments", "Webhooks"],
+        "summary": "Payment provider webhook callback (cryptographically verified)",
+        "security": [],
+        "parameters": [
+          { "name": "provider", "in": "path", "required": true, "schema": { "type": "string", "example": "payhere_sandbox" }, "description": "Payment provider identifier" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": { "$ref": "#/components/schemas/PayHereWebhookNotification" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Webhook processed, duplicate ignored, or out-of-order transition ignored" },
+          "400": { "description": "Malformed notification payload" },
+          "401": { "description": "Invalid webhook signature or merchant mismatch" },
+          "404": { "description": "Unknown provider or payment attempt not found" },
+          "422": { "description": "Payment amount or currency mismatch against stored attempt" }
         }
       }
     }

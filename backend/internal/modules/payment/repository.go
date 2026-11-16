@@ -9,8 +9,10 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -22,6 +24,18 @@ var (
 )
 
 type ctxKeyRequestID struct{}
+type ctxKeyPgxTx struct{}
+
+// TxRunner executes a function inside a single database transaction.
+type TxRunner interface {
+	RunInTx(ctx context.Context, fn func(txCtx context.Context) error) error
+}
+
+type dbQuerier interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // WithRequestID attaches a request ID to a context for structured repository error logging.
 func WithRequestID(ctx context.Context, requestID string) context.Context {
@@ -43,6 +57,36 @@ type Repository struct {
 // NewRepository creates a new payment repository backed by a pgx connection pool.
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
+}
+
+func (r *Repository) querier(ctx context.Context) dbQuerier {
+	if tx, ok := ctx.Value(ctxKeyPgxTx{}).(pgx.Tx); ok && tx != nil {
+		return tx
+	}
+	return r.db
+}
+
+// RunInTx starts a pgx transaction, attaches it to txCtx, and commits if fn returns nil.
+func (r *Repository) RunInTx(ctx context.Context, fn func(txCtx context.Context) error) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		log.Printf("[req_id=%s] payment.Repository.RunInTx begin error: %v", reqIDFromContext(ctx), err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	txCtx := context.WithValue(ctx, ctxKeyPgxTx{}, tx)
+	if err := fn(txCtx); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("[req_id=%s] payment.Repository.RunInTx commit error: %v", reqIDFromContext(ctx), err)
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
 }
 
 // GetOrderForPayment loads an order's payment-relevant fields from the orders table.
@@ -79,7 +123,8 @@ func (r *Repository) GetOrderForPayment(ctx context.Context, orderID string) (Or
 		fallbackBuyerID     string
 	)
 
-	err := r.db.QueryRow(ctx, query, orderID).Scan(
+	q := r.querier(ctx)
+	err := q.QueryRow(ctx, query, orderID).Scan(
 		&resolvedID,
 		&rawJSON,
 		&legacyPaymentAmount,
@@ -136,7 +181,7 @@ func (r *Repository) GetOrderForPayment(ctx context.Context, orderID string) (Or
 
 	if userID != "" {
 		var buyerName, buyerEmail string
-		userErr := r.db.QueryRow(
+		userErr := q.QueryRow(
 			ctx,
 			`SELECT COALESCE(name, ''), COALESCE(email, '') FROM users WHERE id::text = $1`,
 			userID,
@@ -148,6 +193,52 @@ func (r *Repository) GetOrderForPayment(ctx context.Context, orderID string) (Or
 	}
 
 	return order, nil
+}
+
+// GetAttemptByID loads a single payment_attempts record by its ID.
+func (r *Repository) GetAttemptByID(ctx context.Context, attemptID string) (*PaymentAttempt, error) {
+	const query = `
+		SELECT
+			id::text,
+			order_id::text,
+			user_id::text,
+			provider,
+			provider_reference,
+			amount_cents,
+			currency,
+			status,
+			failure_reason,
+			created_at,
+			updated_at,
+			completed_at
+		FROM payment_attempts
+		WHERE id::text = $1
+	`
+
+	var attempt PaymentAttempt
+	err := r.querier(ctx).QueryRow(ctx, query, attemptID).Scan(
+		&attempt.ID,
+		&attempt.OrderID,
+		&attempt.UserID,
+		&attempt.Provider,
+		&attempt.ProviderReference,
+		&attempt.AmountCents,
+		&attempt.Currency,
+		&attempt.Status,
+		&attempt.FailureReason,
+		&attempt.CreatedAt,
+		&attempt.UpdatedAt,
+		&attempt.CompletedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAttemptNotFound
+		}
+		log.Printf("[req_id=%s] payment.Repository.GetAttemptByID error (attempt_id=%s): %v", reqIDFromContext(ctx), attemptID, err)
+		return nil, fmt.Errorf("failed to query payment attempt: %w", err)
+	}
+
+	return &attempt, nil
 }
 
 // GetLatestPendingAttemptByOrder returns the most recent PENDING payment attempt for the given order, or nil if none exists.
@@ -174,7 +265,7 @@ func (r *Repository) GetLatestPendingAttemptByOrder(ctx context.Context, orderID
 	`
 
 	var attempt PaymentAttempt
-	err := r.db.QueryRow(ctx, query, orderID).Scan(
+	err := r.querier(ctx).QueryRow(ctx, query, orderID).Scan(
 		&attempt.ID,
 		&attempt.OrderID,
 		&attempt.UserID,
@@ -230,7 +321,7 @@ func (r *Repository) CreateAttempt(ctx context.Context, attempt PaymentAttempt) 
 	`
 
 	var created PaymentAttempt
-	err := r.db.QueryRow(
+	err := r.querier(ctx).QueryRow(
 		ctx,
 		query,
 		attempt.ID,
@@ -262,6 +353,150 @@ func (r *Repository) CreateAttempt(ctx context.Context, attempt PaymentAttempt) 
 	}
 
 	return &created, nil
+}
+
+// UpdateAttemptStatus updates a payment attempt's status, provider_reference, failure_reason, and completed_at inside a transaction.
+func (r *Repository) UpdateAttemptStatus(
+	ctx context.Context,
+	attemptID string,
+	status PaymentStatus,
+	providerRef *string,
+	failureReason *string,
+	completedAt *time.Time,
+) (*PaymentAttempt, error) {
+	const query = `
+		UPDATE payment_attempts
+		SET
+			status = $2,
+			provider_reference = COALESCE($3, provider_reference),
+			failure_reason = COALESCE($4, failure_reason),
+			completed_at = COALESCE($5, completed_at),
+			updated_at = NOW()
+		WHERE id::text = $1
+		RETURNING
+			id::text,
+			order_id::text,
+			user_id::text,
+			provider,
+			provider_reference,
+			amount_cents,
+			currency,
+			status,
+			failure_reason,
+			created_at,
+			updated_at,
+			completed_at
+	`
+
+	var updated PaymentAttempt
+	err := r.querier(ctx).QueryRow(
+		ctx,
+		query,
+		attemptID,
+		string(status),
+		providerRef,
+		failureReason,
+		completedAt,
+	).Scan(
+		&updated.ID,
+		&updated.OrderID,
+		&updated.UserID,
+		&updated.Provider,
+		&updated.ProviderReference,
+		&updated.AmountCents,
+		&updated.Currency,
+		&updated.Status,
+		&updated.FailureReason,
+		&updated.CreatedAt,
+		&updated.UpdatedAt,
+		&updated.CompletedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAttemptNotFound
+		}
+		log.Printf("[req_id=%s] payment.Repository.UpdateAttemptStatus error (attempt_id=%s): %v", reqIDFromContext(ctx), attemptID, err)
+		return nil, fmt.Errorf("failed to update payment attempt status: %w", err)
+	}
+
+	return &updated, nil
+}
+
+// InsertEventIfNew inserts a payment_events record using ON CONFLICT (provider, provider_event_id) DO NOTHING.
+// If the event is new, it returns inserted=true and existingProcessedAt=nil.
+// If the event already exists, it returns inserted=false and the existing row's processed_at value.
+func (r *Repository) InsertEventIfNew(ctx context.Context, event PaymentEvent) (bool, *time.Time, error) {
+	payload := event.Payload
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+
+	const insertQuery = `
+		INSERT INTO payment_events (
+			id,
+			provider,
+			provider_event_id,
+			attempt_id,
+			event_type,
+			payload,
+			signature_valid,
+			processed_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+		ON CONFLICT (provider, provider_event_id) DO NOTHING
+		RETURNING id::text
+	`
+
+	q := r.querier(ctx)
+	var insertedID string
+	err := q.QueryRow(
+		ctx,
+		insertQuery,
+		event.ID,
+		event.Provider,
+		event.ProviderEventID,
+		event.AttemptID,
+		event.EventType,
+		string(payload),
+		event.SignatureValid,
+		event.ProcessedAt,
+	).Scan(&insertedID)
+	if err == nil {
+		return true, nil, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		log.Printf("[req_id=%s] payment.Repository.InsertEventIfNew insert error (provider=%s, event_id=%s): %v", reqIDFromContext(ctx), event.Provider, event.ProviderEventID, err)
+		return false, nil, fmt.Errorf("failed to insert payment event: %w", err)
+	}
+
+	const selectExistingQuery = `
+		SELECT processed_at
+		FROM payment_events
+		WHERE provider = $1 AND provider_event_id = $2
+	`
+	var existingProcessedAt *time.Time
+	selErr := q.QueryRow(ctx, selectExistingQuery, event.Provider, event.ProviderEventID).Scan(&existingProcessedAt)
+	if selErr != nil {
+		log.Printf("[req_id=%s] payment.Repository.InsertEventIfNew select existing error (provider=%s, event_id=%s): %v", reqIDFromContext(ctx), event.Provider, event.ProviderEventID, selErr)
+		return false, nil, fmt.Errorf("failed to query existing payment event: %w", selErr)
+	}
+
+	return false, existingProcessedAt, nil
+}
+
+// MarkEventProcessed sets processed_at on a stored payment_events record.
+func (r *Repository) MarkEventProcessed(ctx context.Context, provider, providerEventID string, processedAt time.Time) error {
+	const query = `
+		UPDATE payment_events
+		SET processed_at = $3
+		WHERE provider = $1 AND provider_event_id = $2
+	`
+	_, err := r.querier(ctx).Exec(ctx, query, provider, providerEventID, processedAt)
+	if err != nil {
+		log.Printf("[req_id=%s] payment.Repository.MarkEventProcessed error (provider=%s, event_id=%s): %v", reqIDFromContext(ctx), provider, providerEventID, err)
+		return fmt.Errorf("failed to mark payment event processed: %w", err)
+	}
+	return nil
 }
 
 func extractStringField(fields map[string]any, keys ...string) string {

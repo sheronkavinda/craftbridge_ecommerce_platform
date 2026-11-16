@@ -10,6 +10,10 @@ var (
 	ErrNotImplemented = errors.New("payment provider operation not implemented")
 	// ErrProviderNotConfigured is returned when required payment gateway environment variables are missing.
 	ErrProviderNotConfigured = errors.New("payment provider not configured")
+	// ErrInvalidSignature is returned when a webhook notification fails cryptographic signature or merchant verification.
+	ErrInvalidSignature = errors.New("invalid webhook signature")
+	// ErrMalformedNotification is returned when a webhook notification is missing required fields or has invalid values.
+	ErrMalformedNotification = errors.New("malformed webhook notification")
 )
 
 // InitiateRequest contains the order and buyer metadata needed to build a provider checkout session.
@@ -48,6 +52,7 @@ type NotificationInput struct {
 type VerifiedEvent struct {
 	Provider          string
 	ProviderEventID   string
+	AttemptID         string
 	ProviderReference string
 	EventType         string
 	Status            PaymentStatus
