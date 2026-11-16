@@ -45,3 +45,5 @@ logs/
 *.log
 uploads/
 
+
+/backend/uploads/catalog/
