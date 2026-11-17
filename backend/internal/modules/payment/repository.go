@@ -169,11 +169,13 @@ func (r *Repository) GetOrderForPayment(ctx context.Context, orderID string) (Or
 	}
 
 	amountCents := extractAmountCents(fields, legacyPaymentAmount)
+	sellerID := extractStringField(fields, "seller_id")
 
 	order := OrderForPayment{
 		OrderID:     resolvedID,
 		OrderNumber: orderNumber,
 		UserID:      userID,
+		SellerID:    sellerID,
 		AmountCents: amountCents,
 		Currency:    currency,
 		Status:      status,
@@ -285,6 +287,55 @@ func (r *Repository) GetLatestPendingAttemptByOrder(ctx context.Context, orderID
 		}
 		log.Printf("[req_id=%s] payment.Repository.GetLatestPendingAttemptByOrder error (order_id=%s): %v", reqIDFromContext(ctx), orderID, err)
 		return nil, fmt.Errorf("failed to query pending payment attempt: %w", err)
+	}
+
+	return &attempt, nil
+}
+
+// GetLatestSuccessfulAttemptByOrder returns the most recent SUCCESS payment attempt for the given order, or nil if none exists.
+func (r *Repository) GetLatestSuccessfulAttemptByOrder(ctx context.Context, orderID string) (*PaymentAttempt, error) {
+	const query = `
+		SELECT
+			id::text,
+			order_id::text,
+			user_id::text,
+			provider,
+			provider_reference,
+			amount_cents,
+			currency,
+			status,
+			failure_reason,
+			created_at,
+			updated_at,
+			completed_at
+		FROM payment_attempts
+		WHERE order_id::text = $1
+		  AND status = 'SUCCESS'
+		ORDER BY completed_at DESC NULLS LAST, created_at DESC
+		LIMIT 1
+	`
+
+	var attempt PaymentAttempt
+	err := r.querier(ctx).QueryRow(ctx, query, orderID).Scan(
+		&attempt.ID,
+		&attempt.OrderID,
+		&attempt.UserID,
+		&attempt.Provider,
+		&attempt.ProviderReference,
+		&attempt.AmountCents,
+		&attempt.Currency,
+		&attempt.Status,
+		&attempt.FailureReason,
+		&attempt.CreatedAt,
+		&attempt.UpdatedAt,
+		&attempt.CompletedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		log.Printf("[req_id=%s] payment.Repository.GetLatestSuccessfulAttemptByOrder error (order_id=%s): %v", reqIDFromContext(ctx), orderID, err)
+		return nil, fmt.Errorf("failed to query successful payment attempt: %w", err)
 	}
 
 	return &attempt, nil

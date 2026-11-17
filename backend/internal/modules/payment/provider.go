@@ -85,3 +85,33 @@ type PaymentProvider interface {
 	VerifyNotification(input NotificationInput) (VerifiedEvent, error)
 	QueryStatus(ctx context.Context, providerRef string) (ProviderStatus, error)
 }
+
+// RefundOutcomeStatus represents the provider outcome of a server-to-server refund request.
+type RefundOutcomeStatus string
+
+const (
+	RefundOutcomeCompleted RefundOutcomeStatus = "COMPLETED"
+	RefundOutcomePending   RefundOutcomeStatus = "PENDING"
+	RefundOutcomeFailed    RefundOutcomeStatus = "FAILED"
+)
+
+// RefundRequestInput holds the parameters required by a payment provider to issue a refund.
+type RefundRequestInput struct {
+	ProviderReference string
+	AmountCents       int64
+	Currency          string
+	Reason            string
+	IdempotencyKey    string
+}
+
+// RefundResult holds the normalized response from a payment provider's refund endpoint.
+type RefundResult struct {
+	ProviderRefundReference string
+	Status                  RefundOutcomeStatus
+	Raw                     string
+}
+
+// Refunder is an optional capability interface implemented by payment providers that support server-to-server refunds.
+type Refunder interface {
+	RefundPayment(ctx context.Context, input RefundRequestInput) (RefundResult, error)
+}

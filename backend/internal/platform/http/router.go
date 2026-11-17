@@ -666,6 +666,43 @@ const openAPISpecJSON = `{
           "expired": { "type": "integer", "example": 1 },
           "errors": { "type": "integer", "example": 0 }
         }
+      },
+      "CreateRefundRequestInput": {
+        "type": "object",
+        "required": ["reason", "details", "amount"],
+        "properties": {
+          "reason": { "type": "string", "enum": ["ARRIVED_DAMAGED", "NOT_AS_DESCRIBED", "WRONG_ITEM", "LATE_DELIVERY", "CHANGED_MIND", "OTHER"], "example": "ARRIVED_DAMAGED" },
+          "details": { "type": "string", "minLength": 10, "maxLength": 500, "example": "Ceramic vase arrived cracked along the rim." },
+          "amount": { "type": "string", "example": "45.50" }
+        }
+      },
+      "BuyerRefundView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "ref-1a2b3c4d5e6f7a8b" },
+          "order_id": { "type": "string", "example": "order-005" },
+          "order_number": { "type": "string", "example": "ORD-005" },
+          "status": { "type": "string", "enum": ["PENDING", "APPROVED", "PROCESSED", "COMPLETED", "REJECTED"], "example": "COMPLETED" },
+          "reason": { "type": "string", "example": "ARRIVED_DAMAGED" },
+          "details": { "type": "string", "example": "Ceramic vase arrived cracked along the rim." },
+          "amount_cents": { "type": "integer", "format": "int64", "example": 4550 },
+          "amount": { "type": "string", "example": "45.50" },
+          "currency": { "type": "string", "example": "USD" },
+          "requested_at": { "type": "string", "format": "date-time" },
+          "decided_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "step": { "type": "string", "enum": ["submitted", "under_review", "approved", "refund_issued"] },
+                "at": { "type": "string", "format": "date-time" },
+                "done": { "type": "boolean" }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -1254,6 +1291,96 @@ const openAPISpecJSON = `{
           },
           "401": { "description": "Unauthorized" },
           "403": { "description": "Forbidden (admin role required)" }
+        }
+      }
+    },
+    "/api/v1/orders/{id}/refund-requests": {
+      "post": {
+        "tags": ["Refunds"],
+        "summary": "Submit a buyer refund request for a paid order",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" },
+          { "name": "Idempotency-Key", "in": "header", "required": false, "schema": { "type": "string", "maxLength": 100 }, "description": "Optional idempotency key" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateRefundRequestInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Refund request created" },
+          "200": { "description": "Idempotent duplicate returned existing refund" },
+          "400": { "description": "Invalid reason, details, or amount" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Order not found" },
+          "409": { "description": "Order has no verified payment or refund window expired" },
+          "422": { "description": "Amount exceeds refundable balance" }
+        }
+      }
+    },
+    "/api/v1/admin/refunds/{id}/approve": {
+      "post": {
+        "tags": ["Admin - Refunds", "Refunds"],
+        "summary": "Approve a refund request and execute provider refund",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Refund ID" }
+        ],
+        "responses": {
+          "200": { "description": "Refund approved and processed/completed with payment provider" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (admin role required)" },
+          "404": { "description": "Refund not found" },
+          "409": { "description": "Refund is rejected or status transition conflict" },
+          "502": { "description": "Payment provider refund failed" },
+          "503": { "description": "Refund payment provider not configured" }
+        }
+      }
+    },
+    "/api/v1/me/refunds": {
+      "get": {
+        "tags": ["Refunds"],
+        "summary": "List the authenticated buyer's refund requests with timelines",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "APPROVED", "PROCESSED", "COMPLETED", "REJECTED"] } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated buyer refunds with timelines" },
+          "400": { "description": "Invalid pagination or status filter" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" }
+        }
+      }
+    },
+    "/api/v1/me/refunds/{id}": {
+      "get": {
+        "tags": ["Refunds"],
+        "summary": "Get a single buyer refund request by ID with timeline",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Refund ID" }
+        ],
+        "responses": {
+          "200": { "description": "Buyer refund detail with timeline" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Refund not found" }
         }
       }
     }

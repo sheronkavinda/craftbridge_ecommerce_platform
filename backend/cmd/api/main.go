@@ -6,12 +6,14 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"craftbridge/backend/internal/modules/admin"
 	"craftbridge/backend/internal/modules/audit"
 	"craftbridge/backend/internal/modules/payment"
+	"craftbridge/backend/internal/modules/refund"
 	"craftbridge/backend/internal/modules/report"
 	"craftbridge/backend/internal/platform/config"
 	"craftbridge/backend/internal/platform/database"
@@ -41,6 +43,116 @@ func (a *paymentAuditAdapter) RecordAdminAction(
 		RequestID: requestID,
 		Details:   details,
 	})
+}
+
+type refundAuditAdapter struct {
+	auditSvc *audit.Service
+}
+
+func (a *refundAuditAdapter) RecordAdminAction(
+	ctx context.Context,
+	actor refund.Actor,
+	requestID, action, target, outcome, details string,
+) {
+	if a == nil || a.auditSvc == nil {
+		return
+	}
+	_, _ = a.auditSvc.LogAction(ctx, audit.CreateAuditLogInput{
+		ActorID:   actor.ID,
+		ActorName: actor.Name,
+		Action:    action,
+		Target:    target,
+		Outcome:   outcome,
+		RequestID: requestID,
+		Details:   details,
+	})
+}
+
+type refundGatewayAdapter struct {
+	refunder payment.Refunder
+}
+
+func (g *refundGatewayAdapter) RefundPayment(
+	ctx context.Context,
+	input refund.GatewayRefundInput,
+) (refund.GatewayRefundOutput, error) {
+	if g == nil || g.refunder == nil {
+		return refund.GatewayRefundOutput{}, refund.ErrGatewayNotConfigured
+	}
+	res, err := g.refunder.RefundPayment(ctx, payment.RefundRequestInput{
+		ProviderReference: input.ProviderReference,
+		AmountCents:       input.AmountCents,
+		Currency:          input.Currency,
+		Reason:            input.Reason,
+		IdempotencyKey:    input.IdempotencyKey,
+	})
+	if err != nil {
+		if errors.Is(err, payment.ErrProviderNotConfigured) {
+			return refund.GatewayRefundOutput{}, refund.ErrGatewayNotConfigured
+		}
+		return refund.GatewayRefundOutput{}, err
+	}
+
+	return refund.GatewayRefundOutput{
+		ProviderRefundReference: res.ProviderRefundReference,
+		Status:                  refund.GatewayRefundOutcome(res.Status),
+		Raw:                     res.Raw,
+	}, nil
+}
+
+type refundPaymentReaderAdapter struct {
+	paymentRepo *payment.Repository
+}
+
+func (p *refundPaymentReaderAdapter) GetPaidAttemptForOrder(
+	ctx context.Context,
+	orderID string,
+) (refund.PaidPayment, error) {
+	if p == nil || p.paymentRepo == nil {
+		return refund.PaidPayment{}, refund.ErrNoVerifiedPayment
+	}
+
+	ord, err := p.paymentRepo.GetOrderForPayment(ctx, orderID)
+	if err != nil {
+		if errors.Is(err, payment.ErrOrderNotFound) {
+			return refund.PaidPayment{}, refund.ErrOrderNotFound
+		}
+		return refund.PaidPayment{}, err
+	}
+
+	att, err := p.paymentRepo.GetLatestSuccessfulAttemptByOrder(ctx, ord.OrderID)
+	if err != nil {
+		return refund.PaidPayment{}, err
+	}
+	if att == nil {
+		return refund.PaidPayment{
+			OrderID:     ord.OrderID,
+			OrderNumber: ord.OrderNumber,
+			BuyerID:     ord.UserID,
+			SellerID:    ord.SellerID,
+		}, refund.ErrNoVerifiedPayment
+	}
+
+	provRef := att.ID
+	if att.ProviderReference != nil && strings.TrimSpace(*att.ProviderReference) != "" {
+		provRef = strings.TrimSpace(*att.ProviderReference)
+	}
+	completedAt := att.UpdatedAt
+	if att.CompletedAt != nil {
+		completedAt = *att.CompletedAt
+	}
+
+	return refund.PaidPayment{
+		AttemptID:         att.ID,
+		OrderID:           ord.OrderID,
+		OrderNumber:       ord.OrderNumber,
+		BuyerID:           ord.UserID,
+		SellerID:          ord.SellerID,
+		ProviderReference: provRef,
+		AmountCents:       att.AmountCents,
+		Currency:          att.Currency,
+		CompletedAt:       completedAt,
+	}, nil
 }
 
 func main() {
@@ -80,6 +192,16 @@ func main() {
 	paymentService.StartReconcileWorker(ctx, time.Duration(cfg.PaymentReconcileIntervalSeconds)*time.Second)
 	paymentHandler := payment.NewHandler(paymentService)
 
+	refundRepo := refund.NewRepository(dbPool)
+	refundService := refund.NewService(
+		refundRepo,
+		&refundPaymentReaderAdapter{paymentRepo: paymentRepo},
+		&refundGatewayAdapter{refunder: paymentProvider},
+	)
+	refundService.SetRefundWindowDays(cfg.RefundWindowDays)
+	refundService.SetAuditRecorder(&refundAuditAdapter{auditSvc: auditService})
+	refundHandler := refund.NewHandler(refundService)
+
 	router := platformhttp.NewRouter(
 		cfg,
 		dbPool,
@@ -88,6 +210,7 @@ func main() {
 			report.RegisterRoutes(v1, reportHandler)
 			admin.RegisterRoutes(v1, adminHandler)
 			payment.RegisterRoutes(v1, paymentHandler)
+			refund.RegisterRoutes(v1, refundHandler)
 		},
 	)
 

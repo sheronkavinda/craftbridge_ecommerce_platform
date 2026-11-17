@@ -82,6 +82,7 @@ type OrderForPayment struct {
 	OrderID     string
 	OrderNumber string
 	UserID      string
+	SellerID    string
 	AmountCents int64
 	Currency    string
 	Status      string

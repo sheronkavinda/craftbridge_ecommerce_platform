@@ -766,3 +766,67 @@ func TestReconcile_MissingCredentialsLogsOnceWithoutSpam(t *testing.T) {
 		t.Errorf("expected 'retrieval credentials not configured' to be logged once per run, got %d", count)
 	}
 }
+
+func TestPayHereSandboxProvider_RefundPayment(t *testing.T) {
+	t.Parallel()
+
+	const (
+		appID       = "4OVy7xAppIdSandbox"
+		appSecret   = "super_secret_payhere_app_secret_999"
+		accessToken = "tok_live_never_log_this_token_value_12345"
+	)
+
+	// Missing credentials -> ErrProviderNotConfigured
+	unconf := NewPayHereSandboxProviderFromConfig(PayHereSandboxConfig{
+		MerchantID:     "1211149",
+		MerchantSecret: "sec",
+	})
+	if _, err := unconf.RefundPayment(context.Background(), RefundRequestInput{ProviderReference: "ph-1"}); !errors.Is(err, ErrProviderNotConfigured) {
+		t.Fatalf("got err %v, want ErrProviderNotConfigured", err)
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/merchant/v1/oauth/token":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"` + accessToken + `"}`))
+		case "/merchant/v1/payment/refund":
+			if r.Header.Get("Authorization") != "Bearer "+accessToken {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":1,"msg":"Refund processed","data":{"refund_id":"ph-refund-777","status":"COMPLETED"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	unstarted := httptest.NewUnstartedServer(handler)
+	defer unstarted.Close()
+
+	prov := NewPayHereSandboxProviderFromConfig(PayHereSandboxConfig{
+		MerchantID:     "1211149",
+		MerchantSecret: "sec",
+		AppID:          appID,
+		AppSecret:      appSecret,
+		APIBaseURL:     "https://sandbox.payhere.lk",
+		HTTPClient:     &inMemoryHTTPTestServer{handler: unstarted.Config.Handler},
+	})
+
+	res, err := prov.RefundPayment(context.Background(), RefundRequestInput{
+		ProviderReference: "3200991",
+		AmountCents:       4550,
+		Currency:          "USD",
+		Reason:            "ARRIVED_DAMAGED",
+		IdempotencyKey:    "ref-301",
+	})
+	if err != nil {
+		t.Fatalf("RefundPayment error: %v", err)
+	}
+	if res.Status != RefundOutcomeCompleted || res.ProviderRefundReference != "ph-refund-777" {
+		t.Errorf("unexpected RefundResult: %+v", res)
+	}
+	if strings.Contains(res.Raw, appSecret) || strings.Contains(res.Raw, accessToken) {
+		t.Fatalf("secret leaked in RefundResult.Raw: %s", res.Raw)
+	}
+}

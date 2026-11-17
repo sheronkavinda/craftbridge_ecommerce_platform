@@ -27,6 +27,7 @@ type Config struct {
 	PaymentReconcileAfterMinutes    int
 	PaymentAttemptTTLHours          int
 	PaymentReconcileIntervalSeconds int
+	RefundWindowDays                int
 }
 
 // Load reads configuration from .env files (if present) and environment variables.
@@ -37,6 +38,7 @@ func Load() *Config {
 	reconcileAfterMinutes := getPositiveIntEnv("PAYMENT_RECONCILE_AFTER_MINUTES", 30)
 	attemptTTLHours := getPositiveIntEnv("PAYMENT_ATTEMPT_TTL_HOURS", 24)
 	reconcileIntervalSeconds := getNonNegativeIntEnv("PAYMENT_RECONCILE_INTERVAL_SECONDS", 300)
+	refundWindowDays := getPositiveIntEnv("REFUND_WINDOW_DAYS", 30)
 
 	rawOrigins := getEnv("CORS_ORIGINS", "http://localhost:4200")
 	var origins []string
@@ -65,6 +67,7 @@ func Load() *Config {
 		PaymentReconcileAfterMinutes:    reconcileAfterMinutes,
 		PaymentAttemptTTLHours:          attemptTTLHours,
 		PaymentReconcileIntervalSeconds: reconcileIntervalSeconds,
+		RefundWindowDays:                refundWindowDays,
 	}
 }
 

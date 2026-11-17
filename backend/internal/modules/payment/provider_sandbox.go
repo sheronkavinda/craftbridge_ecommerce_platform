@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"crypto/subtle"
@@ -321,6 +322,123 @@ func (p *PayHereSandboxProvider) QueryStatus(ctx context.Context, providerRef st
 	}
 
 	return parsePayHereSearchResponse(trimmedRef, bodyBytes)
+}
+
+// RefundPayment issues a refund against PayHere's Merchant API (POST {base}/merchant/v1/payment/refund).
+// Secrets and access tokens are never included in returned errors, logs, or the sanitized Raw string.
+func (p *PayHereSandboxProvider) RefundPayment(ctx context.Context, input RefundRequestInput) (RefundResult, error) {
+	if p == nil || p.cfg.AppID == "" || p.cfg.AppSecret == "" {
+		return RefundResult{}, ErrProviderNotConfigured
+	}
+
+	paymentID := strings.TrimSpace(input.ProviderReference)
+	if paymentID == "" {
+		return RefundResult{}, fmt.Errorf("%w: provider payment reference is required", ErrInvalidPaymentInput)
+	}
+
+	client := p.cfg.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: defaultPayHereHTTPTimeout}
+	}
+
+	baseURL := strings.TrimRight(p.cfg.APIBaseURL, "/")
+	if baseURL == "" {
+		baseURL = defaultPayHereAPIBaseURL
+	}
+
+	accessToken, err := p.fetchOAuthToken(ctx, client, baseURL)
+	if err != nil {
+		return RefundResult{}, err
+	}
+
+	description := firstNonEmpty(input.Reason, "CraftBridge order refund")
+	reqBody, _ := json.Marshal(map[string]string{
+		"payment_id":  paymentID,
+		"description": description,
+	})
+
+	refundURL := baseURL + "/merchant/v1/payment/refund"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, refundURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return RefundResult{}, fmt.Errorf("failed to build payhere refund request")
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if trimmedKey := strings.TrimSpace(input.IdempotencyKey); trimmedKey != "" {
+		req.Header.Set("Idempotency-Key", trimmedKey)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return RefundResult{}, fmt.Errorf("payhere refund request failed")
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return RefundResult{}, fmt.Errorf("failed to read payhere refund response")
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return RefundResult{}, fmt.Errorf("payhere refund returned HTTP %d", resp.StatusCode)
+	}
+
+	return parsePayHereRefundResponse(paymentID, strings.TrimSpace(input.IdempotencyKey), bodyBytes)
+}
+
+func parsePayHereRefundResponse(paymentID, idempotencyKey string, bodyBytes []byte) (RefundResult, error) {
+	var rawMap map[string]any
+	if err := json.Unmarshal(bodyBytes, &rawMap); err != nil {
+		return RefundResult{}, fmt.Errorf("invalid payhere refund response JSON")
+	}
+
+	var dataMap map[string]any
+	if d, ok := rawMap["data"].(map[string]any); ok {
+		dataMap = d
+	}
+
+	refundRef := extractAnyString(dataMap, "refund_id", "payment_id", "id")
+	if refundRef == "" {
+		refundRef = extractAnyString(rawMap, "refund_id", "payment_id", "id")
+	}
+	if refundRef == "" {
+		if idempotencyKey != "" {
+			refundRef = "ph-refund-" + idempotencyKey
+		} else {
+			refundRef = "ph-refund-" + paymentID
+		}
+	}
+
+	outcome := RefundOutcomeCompleted
+	statusStr := strings.ToUpper(extractAnyString(dataMap, "status"))
+	if statusStr == "" {
+		statusStr = strings.ToUpper(extractAnyString(rawMap, "status"))
+	}
+
+	switch statusStr {
+	case "PENDING", "PROCESSING", "0":
+		outcome = RefundOutcomePending
+	case "FAILED", "ERROR", "-1", "-2":
+		outcome = RefundOutcomeFailed
+	case "1", "COMPLETED", "SUCCESS", "REFUNDED", "":
+		outcome = RefundOutcomeCompleted
+	}
+
+	msg := extractAnyString(rawMap, "msg", "message")
+	sanitizedRaw, _ := json.Marshal(map[string]string{
+		"status":           string(outcome),
+		"refund_reference": refundRef,
+		"message":          msg,
+	})
+
+	return RefundResult{
+		ProviderRefundReference: refundRef,
+		Status:                  outcome,
+		Raw:                     string(sanitizedRaw),
+	}, nil
 }
 
 func (p *PayHereSandboxProvider) fetchOAuthToken(ctx context.Context, client HTTPDoer, baseURL string) (string, error) {
