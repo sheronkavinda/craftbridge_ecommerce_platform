@@ -1,0 +1,224 @@
+<app-payments-shell>
+  <section class="max-w-2xl mx-auto" aria-live="polite">
+    @if (loading()) {
+      <div class="text-center py-12">
+        <div
+          class="mx-auto mb-5 w-12 h-12 rounded-full border-4 border-line border-t-terracotta animate-spin motion-reduce:animate-none"
+          aria-hidden="true"
+        ></div>
+        <h1 class="font-serif-display text-2xl sm:text-3xl font-bold text-navy">
+          Loading payment status...
+        </h1>
+      </div>
+    } @else if (notFoundError(); as errText) {
+      <div
+        role="alert"
+        class="bg-surface border border-line rounded-2xl p-8 sm:p-10 text-center shadow-xs"
+      >
+        <h1 class="font-serif-display text-2xl sm:text-3xl font-bold text-navy">
+          {{ errText }}
+        </h1>
+        <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            type="button"
+            (click)="checkAgain()"
+            class="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            Check again
+          </button>
+          <a
+            routerLink="/"
+            class="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-navy text-navy hover:bg-cream-100 font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            Back to shop
+          </a>
+        </div>
+      </div>
+    } @else if (payment(); as pay) {
+      <!-- Status Hero Area (Mockup 13) -->
+      <div class="text-center">
+        @if (pay.status === 'PENDING') {
+          <!-- Circular Progress Ring (terracotta arc on grey ring) -->
+          <div class="mx-auto mb-4 w-12 h-12 flex items-center justify-center" aria-hidden="true">
+            <svg
+              class="w-11 h-11 animate-spin motion-reduce:animate-none"
+              viewBox="0 0 44 44"
+              fill="none"
+            >
+              <circle
+                cx="22"
+                cy="22"
+                r="18"
+                stroke="#cbd5e1"
+                stroke-width="4"
+              />
+              <path
+                d="M22 4a18 18 0 0 1 16.5 11"
+                stroke="#c85a32"
+                stroke-width="4"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+
+          <h1 class="font-serif-display text-3xl sm:text-4xl font-bold text-navy tracking-tight">
+            Confirming your payment
+          </h1>
+        } @else if (pay.status === 'SUCCESS') {
+          <div
+            class="mx-auto mb-4 w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center"
+            aria-hidden="true"
+          >
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" />
+            </svg>
+          </div>
+
+          <h1 class="font-serif-display text-3xl sm:text-4xl font-bold text-navy tracking-tight">
+            Payment confirmed
+          </h1>
+        } @else {
+          <div
+            class="mx-auto mb-4 w-12 h-12 rounded-full bg-red-100 text-red-800 flex items-center justify-center"
+            aria-hidden="true"
+          >
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <circle cx="12" cy="12" r="9" />
+              <path stroke-linecap="round" d="m15 9-6 6m0-6 6 6" />
+            </svg>
+          </div>
+
+          <h1 class="font-serif-display text-3xl sm:text-4xl font-bold text-navy tracking-tight">
+            {{ failureHeading() }}
+          </h1>
+        }
+
+        <p class="mt-1.5 text-sm text-ink-secondary font-medium">
+          Order #{{ pay.order_number || pay.order_id }}
+        </p>
+
+        <div class="mt-2 font-serif-display text-2xl sm:text-3xl font-bold text-navy">
+          {{ pay.amount_cents | money: pay.currency }}
+        </div>
+
+        <!-- Status Pill -->
+        <div class="mt-3">
+          @if (pay.status === 'PENDING') {
+            <span
+              class="inline-flex items-center gap-1.5 rounded-full bg-amber-100/90 text-amber-900 px-4 py-1 text-xs font-semibold"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 2" />
+              </svg>
+              <span>Pending payment</span>
+            </span>
+          } @else if (pay.status === 'SUCCESS') {
+            <span
+              class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-900 px-4 py-1 text-xs font-semibold"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" />
+              </svg>
+              <span>Paid</span>
+            </span>
+          } @else {
+            <span
+              class="inline-flex items-center gap-1.5 rounded-full bg-red-100 text-red-900 px-4 py-1 text-xs font-semibold"
+            >
+              <span>{{ pay.status }}</span>
+            </span>
+          }
+        </div>
+
+        <!-- Status Description Lines -->
+        @if (pay.status === 'PENDING') {
+          <div class="mt-4 text-sm text-ink-secondary leading-relaxed">
+            <p>We are waiting for payment confirmation.</p>
+            <p>Your order will update automatically.</p>
+          </div>
+
+          @if (timedOut()) {
+            <div
+              role="status"
+              class="mt-4 inline-flex flex-col sm:flex-row items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs sm:text-sm text-amber-950"
+            >
+              <span>This is taking longer than expected.</span>
+              <button
+                type="button"
+                (click)="checkAgain()"
+                class="inline-flex items-center justify-center rounded-lg bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-xs px-3.5 py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring cursor-pointer"
+              >
+                Check again
+              </button>
+            </div>
+          }
+        } @else if (pay.status === 'SUCCESS') {
+          <p class="mt-4 text-sm text-ink-secondary">
+            Your payment has been verified and your artisan order is confirmed.
+          </p>
+        } @else {
+          <p class="mt-4 text-sm text-ink-secondary">
+            No charges were completed for this attempt. You can try your payment again below.
+          </p>
+        }
+
+        <p class="mt-3 text-xs text-ink-secondary">
+          Payment method: <strong class="font-semibold text-ink">{{ providerLabel() }}</strong>
+        </p>
+      </div>
+
+      <!-- Order Overview Card (Mockup 13) -->
+      <div class="mt-7 bg-surface border border-line rounded-2xl p-5 sm:p-7 shadow-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 pb-4 border-b border-line">
+          <h2 class="text-sm font-semibold text-ink">Order overview</h2>
+          <div class="text-xs text-ink-secondary">
+            <span>Order #{{ pay.order_number || pay.order_id }}</span>
+            <span class="mx-1.5" aria-hidden="true">|</span>
+            <span>Placed on {{ pay.created_at | date: 'MMM d, y' }}</span>
+          </div>
+        </div>
+
+        <div class="pt-4 flex items-center justify-between text-base font-bold text-navy">
+          <span>Total</span>
+          <span>{{ pay.amount_cents | money: pay.currency }}</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+        @if (pay.status === 'PENDING') {
+          <!-- TODO(member-04): Connect to Member 04's buyer order detail page (/orders/:id) once merged -->
+          <a
+            [routerLink]="['/orders', pay.order_id]"
+            class="w-full sm:w-48 inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            View order
+          </a>
+        } @else if (pay.status === 'SUCCESS') {
+          <!-- TODO(step-8): Receipt view route (/payments/receipt/:orderId) added in Step 8 -->
+          <a
+            [routerLink]="['/payments/receipt', pay.order_id]"
+            class="w-full sm:w-48 inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            View receipt
+          </a>
+        } @else {
+          <a
+            [routerLink]="['/payments/redirect', pay.order_id]"
+            class="w-full sm:w-48 inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            Try payment again
+          </a>
+        }
+
+        <a
+          routerLink="/"
+          class="w-full sm:w-48 inline-flex items-center justify-center rounded-xl border border-navy text-navy hover:bg-cream-100 font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          Back to shop
+        </a>
+      </div>
+    }
+  </section>
+</app-payments-shell>
