@@ -27,6 +27,12 @@ func RegisterRoutes(rg *gin.RouterGroup, handler *Handler) {
 		adminPayments.POST("/reconcile", handler.ReconcilePayments)
 	}
 
+	sellerGroup := rg.Group("/seller")
+	sellerGroup.Use(platformhttp.RequireSellerRole())
+	{
+		sellerGroup.GET("/earnings", handler.GetSellerEarnings)
+	}
+
 	webhooks := rg.Group("/webhooks")
 	{
 		webhooks.POST("/payments/:provider", handler.HandleWebhook)

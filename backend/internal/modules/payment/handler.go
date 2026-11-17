@@ -115,6 +115,53 @@ func (h *Handler) ReconcilePayments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": summary})
 }
 
+// GetSellerEarnings handles GET /api/v1/seller/earnings.
+func (h *Handler) GetSellerEarnings(c *gin.Context) {
+	actor, reqID := extractVerifiedActor(c)
+	ctx := WithRequestID(c.Request.Context(), reqID)
+
+	rangeDays := 30
+	if rawRange := strings.TrimSpace(c.Query("range_days")); rawRange != "" {
+		parsed, err := strconv.Atoi(rawRange)
+		if err != nil || (parsed != 7 && parsed != 30 && parsed != 90) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid range_days parameter: must be 7, 30, or 90"})
+			return
+		}
+		rangeDays = parsed
+	}
+
+	page := 1
+	if rawPage := strings.TrimSpace(c.Query("page")); rawPage != "" {
+		parsed, err := strconv.Atoi(rawPage)
+		if err != nil || parsed < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page parameter"})
+			return
+		}
+		page = parsed
+	}
+
+	pageSize := 20
+	if rawPageSize := strings.TrimSpace(c.Query("page_size")); rawPageSize != "" {
+		parsed, err := strconv.Atoi(rawPageSize)
+		if err != nil || parsed < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page_size parameter"})
+			return
+		}
+		pageSize = parsed
+	}
+
+	payload, meta, err := h.service.GetSellerEarnings(ctx, actor, rangeDays, page, pageSize)
+	if err != nil {
+		handleServiceError(c, reqID, err, "failed to retrieve seller earnings")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": payload,
+		"meta": meta,
+	})
+}
+
 // HandleWebhook handles POST /api/v1/webhooks/payments/:provider.
 // This is a public route authenticated via provider cryptographic signature verification.
 func (h *Handler) HandleWebhook(c *gin.Context) {

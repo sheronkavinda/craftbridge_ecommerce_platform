@@ -163,6 +163,39 @@ func RequireBuyerRole() gin.HandlerFunc {
 	}
 }
 
+// RequireSellerRole enforces Role-Based Access Control (RBAC) for seller operations.
+// It blocks any caller that is not authenticated with the 'seller' role.
+func RequireSellerRole() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: valid authentication credentials required",
+			})
+			return
+		}
+
+		if !strings.EqualFold(actorRole, "seller") {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "forbidden: seller role required",
+			})
+			return
+		}
+
+		if actorID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: missing actor identity",
+			})
+			return
+		}
+
+		c.Set(ContextKeyActorID, actorID)
+		c.Set(ContextKeyActorName, actorName)
+		c.Set(ContextKeyActorRole, "seller")
+		c.Next()
+	}
+}
+
 func extractVerifiedIdentity(c *gin.Context) (actorID, actorName, actorRole string, err error) {
 	cfg := activeConfig.Load()
 	appEnv := "development"
@@ -702,6 +735,42 @@ const openAPISpecJSON = `{
               }
             }
           }
+        }
+      },
+      "ReceiptView": {
+        "type": "object",
+        "properties": {
+          "receipt_number": { "type": "string", "example": "RCP-20261115-A1B2C3" },
+          "issued_at": { "type": "string", "format": "date-time" },
+          "order_id": { "type": "string", "example": "order-001" },
+          "order_number": { "type": "string", "example": "ORD-001" },
+          "buyer_name": { "type": "string", "example": "Nimal Perera" },
+          "buyer_email": { "type": "string", "example": "nimal@craftbridge.test" },
+          "payment_method": { "type": "string", "example": "PayHere Sandbox" },
+          "provider_reference": { "type": "string", "example": "3200251485" },
+          "amount_cents": { "type": "integer", "format": "int64", "example": 1250000 },
+          "amount": { "type": "string", "example": "12500.00" },
+          "currency": { "type": "string", "example": "USD" },
+          "items": { "type": "array", "items": { "type": "object" } },
+          "refunded_cents": { "type": "integer", "format": "int64", "example": 0 },
+          "net_paid_cents": { "type": "integer", "format": "int64", "example": 1250000 },
+          "status": { "type": "string", "enum": ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"], "example": "PAID" }
+        }
+      },
+      "SellerEarningsPayload": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "object",
+            "properties": {
+              "pending_cents": { "type": "integer", "format": "int64", "example": 9500 },
+              "available_cents": { "type": "integer", "format": "int64", "example": 12500 },
+              "paid_cents": { "type": "integer", "format": "int64", "example": 0 },
+              "currency": { "type": "string", "example": "USD" }
+            }
+          },
+          "transactions": { "type": "array", "items": { "type": "object" } },
+          "payouts": { "type": "array", "items": { "type": "object" } }
         }
       }
     }
@@ -1381,6 +1450,85 @@ const openAPISpecJSON = `{
           "401": { "description": "Unauthorized" },
           "403": { "description": "Forbidden (buyer role required)" },
           "404": { "description": "Refund not found" }
+        }
+      }
+    },
+    "/api/v1/me/orders/{id}/receipt": {
+      "get": {
+        "tags": ["Receipts"],
+        "summary": "View or lazily issue an owner-restricted digital payment receipt for a paid order",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Digital receipt details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReceiptView" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Order not found" },
+          "409": { "description": "No verified payment for this order" }
+        }
+      }
+    },
+    "/api/v1/me/orders/{id}/receipt/download": {
+      "get": {
+        "tags": ["Receipts"],
+        "summary": "Download a printable HTML payment receipt for a paid order",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Printable HTML receipt document",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Order not found" },
+          "409": { "description": "No verified payment for this order" }
+        }
+      }
+    },
+    "/api/v1/seller/earnings": {
+      "get": {
+        "tags": ["Payments", "Reports"],
+        "summary": "Get seller earnings projection (verified payments minus completed refunds and platform commission)",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "range_days", "in": "query", "schema": { "type": "integer", "enum": [7, 30, 90], "default": 30 } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Seller earnings summary, transactions, and payouts",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SellerEarningsPayload" }
+              }
+            }
+          },
+          "400": { "description": "Invalid range_days or pagination parameter" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (seller role required)" }
         }
       }
     }

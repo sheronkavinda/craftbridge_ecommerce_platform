@@ -58,18 +58,21 @@ func (noopTxRunner) RunInTx(ctx context.Context, fn func(txCtx context.Context) 
 }
 
 // Service implements payment initiation, idempotency/reuse of recent pending attempts, webhook verification,
-// reconciliation of timed-out pending attempts, and buyer payment history queries.
+// reconciliation of timed-out pending attempts, buyer payment history queries, and seller earnings calculations.
 type Service struct {
-	repo           RepositoryStore
-	txRunner       TxRunner
-	orders         OrderReader
-	provider       PaymentProvider
-	providers      map[string]PaymentProvider
-	notifier       OrderNotifier
-	auditRecorder  AuditRecorder
-	reconcileAfter time.Duration
-	attemptTTL     time.Duration
-	nowFn          func() time.Time
+	repo              RepositoryStore
+	txRunner          TxRunner
+	orders            OrderReader
+	salesReader       SellerSalesReader
+	provider          PaymentProvider
+	providers         map[string]PaymentProvider
+	notifier          OrderNotifier
+	auditRecorder     AuditRecorder
+	reconcileAfter    time.Duration
+	attemptTTL        time.Duration
+	commissionPercent int
+	payoutHoldDays    int
+	nowFn             func() time.Time
 }
 
 // NewService creates a new payment service.
@@ -77,6 +80,11 @@ func NewService(repo RepositoryStore, orders OrderReader, provider PaymentProvid
 	var runner TxRunner = noopTxRunner{}
 	if tr, ok := repo.(TxRunner); ok && tr != nil {
 		runner = tr
+	}
+
+	var sales SellerSalesReader
+	if sr, ok := repo.(SellerSalesReader); ok && sr != nil {
+		sales = sr
 	}
 
 	providers := make(map[string]PaymentProvider)
@@ -91,17 +99,35 @@ func NewService(repo RepositoryStore, orders OrderReader, provider PaymentProvid
 	}
 
 	return &Service{
-		repo:           repo,
-		txRunner:       runner,
-		orders:         orders,
-		provider:       provider,
-		providers:      providers,
-		notifier:       NewLogOrderNotifier(),
-		reconcileAfter: defaultReconcileAfterMinutes * time.Minute,
-		attemptTTL:     defaultAttemptTTLHours * time.Hour,
+		repo:              repo,
+		txRunner:          runner,
+		orders:            orders,
+		salesReader:       sales,
+		provider:          provider,
+		providers:         providers,
+		notifier:          NewLogOrderNotifier(),
+		reconcileAfter:    defaultReconcileAfterMinutes * time.Minute,
+		attemptTTL:        defaultAttemptTTLHours * time.Hour,
+		commissionPercent: defaultPlatformCommissionPercent,
+		payoutHoldDays:    defaultPayoutHoldDays,
 		nowFn: func() time.Time {
 			return time.Now().UTC()
 		},
+	}
+}
+
+// SetSellerSalesReader configures the SellerSalesReader used by GetSellerEarnings.
+func (s *Service) SetSellerSalesReader(reader SellerSalesReader) {
+	s.salesReader = reader
+}
+
+// SetEarningsConfig configures the platform commission percentage and payout hold window in days.
+func (s *Service) SetEarningsConfig(commissionPercent, payoutHoldDays int) {
+	if commissionPercent >= 0 {
+		s.commissionPercent = commissionPercent
+	}
+	if payoutHoldDays >= 0 {
+		s.payoutHoldDays = payoutHoldDays
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"craftbridge/backend/internal/modules/admin"
 	"craftbridge/backend/internal/modules/audit"
 	"craftbridge/backend/internal/modules/payment"
+	"craftbridge/backend/internal/modules/receipt"
 	"craftbridge/backend/internal/modules/refund"
 	"craftbridge/backend/internal/modules/report"
 	"craftbridge/backend/internal/platform/config"
@@ -155,6 +156,74 @@ func (p *refundPaymentReaderAdapter) GetPaidAttemptForOrder(
 	}, nil
 }
 
+type receiptPaymentReaderAdapter struct {
+	paymentRepo *payment.Repository
+}
+
+func (r *receiptPaymentReaderAdapter) GetVerifiedPaymentForOrder(
+	ctx context.Context,
+	orderID string,
+) (receipt.PaidOrderPayment, error) {
+	if r == nil || r.paymentRepo == nil {
+		return receipt.PaidOrderPayment{}, receipt.ErrNoVerifiedPayment
+	}
+
+	ord, err := r.paymentRepo.GetOrderForPayment(ctx, orderID)
+	if err != nil {
+		if errors.Is(err, payment.ErrOrderNotFound) {
+			return receipt.PaidOrderPayment{}, receipt.ErrOrderNotFound
+		}
+		return receipt.PaidOrderPayment{}, err
+	}
+
+	att, err := r.paymentRepo.GetLatestSuccessfulAttemptByOrder(ctx, ord.OrderID)
+	if err != nil {
+		return receipt.PaidOrderPayment{}, err
+	}
+	if att == nil {
+		return receipt.PaidOrderPayment{
+			OrderID:     ord.OrderID,
+			OrderNumber: ord.OrderNumber,
+			BuyerID:     ord.UserID,
+			BuyerName:   ord.BuyerName,
+			BuyerEmail:  ord.BuyerEmail,
+		}, receipt.ErrNoVerifiedPayment
+	}
+
+	provRef := att.ID
+	if att.ProviderReference != nil && strings.TrimSpace(*att.ProviderReference) != "" {
+		provRef = strings.TrimSpace(*att.ProviderReference)
+	}
+	completedAt := att.UpdatedAt
+	if att.CompletedAt != nil {
+		completedAt = *att.CompletedAt
+	}
+
+	return receipt.PaidOrderPayment{
+		AttemptID:         att.ID,
+		OrderID:           ord.OrderID,
+		OrderNumber:       ord.OrderNumber,
+		BuyerID:           ord.UserID,
+		BuyerName:         ord.BuyerName,
+		BuyerEmail:        ord.BuyerEmail,
+		AmountCents:       att.AmountCents,
+		Currency:          att.Currency,
+		Provider:          att.Provider,
+		ProviderReference: provRef,
+		CompletedAt:       completedAt,
+	}, nil
+}
+
+type receiptOrderSummaryAdapter struct{}
+
+func (receiptOrderSummaryAdapter) GetOrderSummary(_ context.Context, _ string) (receipt.OrderSummary, error) {
+	// With the current placeholder orders schema (which has no order_items table yet),
+	// return an empty items slice without inventing line items.
+	return receipt.OrderSummary{
+		Items: []receipt.ReceiptLineItem{},
+	}, nil
+}
+
 func main() {
 	cfg := config.Load()
 
@@ -188,6 +257,7 @@ func main() {
 		time.Duration(cfg.PaymentReconcileAfterMinutes)*time.Minute,
 		time.Duration(cfg.PaymentAttemptTTLHours)*time.Hour,
 	)
+	paymentService.SetEarningsConfig(cfg.PlatformCommissionPercent, cfg.PayoutHoldDays)
 	paymentService.SetAuditRecorder(&paymentAuditAdapter{auditSvc: auditService})
 	paymentService.StartReconcileWorker(ctx, time.Duration(cfg.PaymentReconcileIntervalSeconds)*time.Second)
 	paymentHandler := payment.NewHandler(paymentService)
@@ -202,6 +272,14 @@ func main() {
 	refundService.SetAuditRecorder(&refundAuditAdapter{auditSvc: auditService})
 	refundHandler := refund.NewHandler(refundService)
 
+	receiptRepo := receipt.NewRepository(dbPool)
+	receiptService := receipt.NewService(
+		receiptRepo,
+		&receiptPaymentReaderAdapter{paymentRepo: paymentRepo},
+		receiptOrderSummaryAdapter{},
+	)
+	receiptHandler := receipt.NewHandler(receiptService)
+
 	router := platformhttp.NewRouter(
 		cfg,
 		dbPool,
@@ -211,6 +289,7 @@ func main() {
 			admin.RegisterRoutes(v1, adminHandler)
 			payment.RegisterRoutes(v1, paymentHandler)
 			refund.RegisterRoutes(v1, refundHandler)
+			receipt.RegisterRoutes(v1, receiptHandler)
 		},
 	)
 
