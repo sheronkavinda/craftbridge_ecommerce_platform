@@ -11,7 +11,8 @@ export const routes: Routes = [
       import('./features/storefront/home/home').then((m) => m.Home),
   },
 
-  // Shop and Search Page
+  // Shop and Search Pageeeee
+  
   {
     path: 'shop',
     loadComponent: () =>
