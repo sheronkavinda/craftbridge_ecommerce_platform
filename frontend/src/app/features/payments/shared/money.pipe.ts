@@ -3,7 +3,8 @@ import { Pipe, PipeTransform } from '@angular/core';
 /**
  * Formats integer cents and a currency code without floating-point arithmetic.
  * - USD: "$2,000.00 USD", "$0.05 USD", "$0.00 USD"
- * - Other currencies: "<CUR> 2,000.00"
+ * - Negative USD: "−$6.00 USD" (using the Unicode minus sign U+2212)
+ * - Other currencies: "<CUR> 2,000.00" (or "−<CUR> 6.00")
  */
 export function formatMoneyCents(
   amountCents: number | null | undefined,
@@ -22,7 +23,7 @@ export function formatMoneyCents(
   const wholeWithCommas = String(wholeUnits).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   const fracTwoDigits = String(fractionalCents).padStart(2, '0');
   const formattedNumber = `${wholeWithCommas}.${fracTwoDigits}`;
-  const signPrefix = isNegative ? '-' : '';
+  const signPrefix = isNegative ? '\u2212' : '';
 
   const normalizedCurrency = (currency || 'USD').trim().toUpperCase() || 'USD';
   if (normalizedCurrency === 'USD') {

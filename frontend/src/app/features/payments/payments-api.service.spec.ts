@@ -3,7 +3,15 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { environment } from '../../../environments/environment';
 import { PaymentsApiError, PaymentsApiService } from './payments-api.service';
-import { BuyerPayment, DownloadedReceipt, InitiatePaymentResponse, ReceiptView } from './payments.models';
+import {
+  BuyerPayment,
+  BuyerRefund,
+  CreateRefundResult,
+  DownloadedReceipt,
+  InitiatePaymentResponse,
+  ReceiptView,
+  SellerEarningsResponse,
+} from './payments.models';
 
 describe('PaymentsApiService', () => {
   let service: PaymentsApiService;
@@ -144,6 +152,144 @@ describe('PaymentsApiService', () => {
     expect(result).toBeDefined();
     expect(result!.filename).toBe('receipt-RCP-20261115-A1B2C3.html');
     expect(result!.blob.size).toBe(htmlBlob.size);
+  });
+
+  it('createRefundRequest sends Idempotency-Key header and distinguishes HTTP 201 (replayed=false) vs HTTP 200 (replayed=true)', () => {
+    const mockRefund: BuyerRefund = {
+      id: 'ref-001',
+      order_id: 'order-005',
+      order_number: 'CB-1042',
+      status: 'PENDING',
+      reason: 'ARRIVED_DAMAGED',
+      details: 'One of the ceramic mugs arrived with a cracked handle.',
+      amount_cents: 2000,
+      amount: '20.00',
+      currency: 'USD',
+      requested_at: '2026-11-19T08:00:00Z',
+    };
+
+    let createdRes: CreateRefundResult | undefined;
+    service
+      .createRefundRequest(
+        'order-005',
+        {
+          reason: 'ARRIVED_DAMAGED',
+          details: 'One of the ceramic mugs arrived with a cracked handle.',
+          amount: '20.00',
+        },
+        'idem-uuid-123',
+      )
+      .subscribe((res) => (createdRes = res));
+
+    const req1 = httpMock.expectOne(
+      `${environment.apiBaseUrl}/orders/order-005/refund-requests`,
+    );
+    expect(req1.request.method).toBe('POST');
+    expect(req1.request.headers.get('Idempotency-Key')).toBe('idem-uuid-123');
+    req1.flush({ data: mockRefund }, { status: 201, statusText: 'Created' });
+
+    expect(createdRes).toEqual({ refund: mockRefund, replayed: false });
+
+    let replayedRes: CreateRefundResult | undefined;
+    service
+      .createRefundRequest(
+        'order-005',
+        {
+          reason: 'ARRIVED_DAMAGED',
+          details: 'One of the ceramic mugs arrived with a cracked handle.',
+          amount: '20.00',
+        },
+        'idem-uuid-123',
+      )
+      .subscribe((res) => (replayedRes = res));
+
+    const req2 = httpMock.expectOne(
+      `${environment.apiBaseUrl}/orders/order-005/refund-requests`,
+    );
+    req2.flush({ data: mockRefund }, { status: 200, statusText: 'OK' });
+
+    expect(replayedRes).toEqual({ refund: mockRefund, replayed: true });
+  });
+
+  it('listRefunds and getRefund query /me/refunds and /me/refunds/:id', () => {
+    service.listRefunds(1, 20).subscribe((res) => {
+      expect(res.data.length).toBe(1);
+      expect(res.meta.total).toBe(1);
+    });
+
+    const listReq = httpMock.expectOne(
+      (r) =>
+        r.url === `${environment.apiBaseUrl}/me/refunds` &&
+        r.params.get('page') === '1' &&
+        r.params.get('page_size') === '20',
+    );
+    listReq.flush({
+      data: [
+        {
+          id: 'ref-001',
+          order_id: 'order-005',
+          order_number: 'CB-1042',
+          status: 'PENDING',
+          reason: 'ARRIVED_DAMAGED',
+          details: 'Handle cracked.',
+          amount_cents: 2000,
+          amount: '20.00',
+          currency: 'USD',
+          requested_at: '2026-11-19T08:00:00Z',
+        },
+      ],
+      meta: { page: 1, page_size: 20, total: 1 },
+    });
+
+    service.getRefund('ref-001').subscribe((ref) => {
+      expect(ref.id).toBe('ref-001');
+    });
+    const detailReq = httpMock.expectOne(`${environment.apiBaseUrl}/me/refunds/ref-001`);
+    expect(detailReq.request.method).toBe('GET');
+    detailReq.flush({
+      data: {
+        id: 'ref-001',
+        order_id: 'order-005',
+        order_number: 'CB-1042',
+        status: 'PENDING',
+        reason: 'ARRIVED_DAMAGED',
+        details: 'Handle cracked.',
+        amount_cents: 2000,
+        amount: '20.00',
+        currency: 'USD',
+        requested_at: '2026-11-19T08:00:00Z',
+      },
+    });
+  });
+
+  it('getSellerEarnings queries /seller/earnings with range_days, page, and page_size', () => {
+    let actual: SellerEarningsResponse | undefined;
+    service.getSellerEarnings(90, 2, 10).subscribe((res) => (actual = res));
+
+    const req = httpMock.expectOne(
+      (r) =>
+        r.url === `${environment.apiBaseUrl}/seller/earnings` &&
+        r.params.get('range_days') === '90' &&
+        r.params.get('page') === '2' &&
+        r.params.get('page_size') === '10',
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      data: {
+        summary: {
+          pending_cents: 34000,
+          available_cents: 62000,
+          paid_cents: 88000,
+          currency: 'USD',
+        },
+        transactions: [],
+        payouts: [],
+      },
+      meta: { page: 2, page_size: 10, total: 15 },
+    });
+
+    expect(actual?.data.summary.available_cents).toBe(62000);
+    expect(actual?.meta.page).toBe(2);
   });
 
   it('maps backend {"error": "..."} responses to PaymentsApiError with status and message', () => {

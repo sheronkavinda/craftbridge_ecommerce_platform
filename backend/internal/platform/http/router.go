@@ -344,7 +344,7 @@ func CORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, X-Actor-ID, X-Actor-Name, X-Actor-Role")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, X-Actor-ID, X-Actor-Name, X-Actor-Role, Idempotency-Key")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 

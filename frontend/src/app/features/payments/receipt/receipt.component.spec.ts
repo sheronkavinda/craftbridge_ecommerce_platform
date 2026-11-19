@@ -108,7 +108,7 @@ describe('ReceiptComponent', () => {
       '[data-testid="receipt-refunded-row"]',
     ) as HTMLElement;
     expect(refundedRow).toBeTruthy();
-    expect(refundedRow.textContent).toContain('-$45.50 USD');
+    expect(refundedRow.textContent).toContain('−$45.50 USD');
 
     const netRow = fixture.nativeElement.querySelector(
       '[data-testid="receipt-net-row"]',

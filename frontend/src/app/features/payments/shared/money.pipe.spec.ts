@@ -21,6 +21,12 @@ describe('MoneyPipe', () => {
     expect(formatMoneyCents(11500, 'USD')).toBe('$115.00 USD');
   });
 
+  it('formats negative cents with a proper Unicode minus sign (e.g. -600 USD -> "−$6.00 USD")', () => {
+    expect(pipe.transform(-600, 'USD')).toBe('−$6.00 USD');
+    expect(pipe.transform(-200000, 'USD')).toBe('−$2,000.00 USD');
+    expect(pipe.transform(-600, 'LKR')).toBe('−LKR 6.00');
+  });
+
   it('falls back to "<CUR> 0.00" format for non-USD currencies', () => {
     expect(pipe.transform(200000, 'LKR')).toBe('LKR 2,000.00');
     expect(pipe.transform(0, 'EUR')).toBe('EUR 0.00');

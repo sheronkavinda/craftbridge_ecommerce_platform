@@ -28,6 +28,20 @@ export const PAYMENTS_ROUTES: Routes = [
       import('./receipt/receipt.component').then((m) => m.ReceiptComponent),
   },
   {
+    path: 'refunds',
+    loadComponent: () =>
+      import('./refund-request/refund-request.component').then(
+        (m) => m.RefundRequestComponent,
+      ),
+  },
+  {
+    path: 'seller-earnings',
+    loadComponent: () =>
+      import('./seller-earnings/seller-earnings.component').then(
+        (m) => m.SellerEarningsComponent,
+      ),
+  },
+  {
     path: '',
     redirectTo: 'history',
     pathMatch: 'full',

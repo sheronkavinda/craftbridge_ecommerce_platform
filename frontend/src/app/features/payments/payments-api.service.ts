@@ -1,15 +1,26 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import {
+  HttpClient,
+  HttpErrorResponse,
+  HttpHeaders,
+  HttpParams,
+} from '@angular/common/http';
 import { Observable, catchError, map, switchMap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   ApiEnvelope,
   BuyerPayment,
+  BuyerRefund,
+  CreateRefundBody,
+  CreateRefundResult,
   DownloadedReceipt,
   InitiatePaymentResponse,
   PaginatedPayments,
+  PaginatedRefunds,
   PaymentStatus,
   ReceiptView,
+  RefundStatus,
+  SellerEarningsResponse,
 } from './payments.models';
 
 export class PaymentsApiError extends Error {
@@ -102,6 +113,99 @@ export class PaymentsApiService {
         this.fetchReceiptBlob(trimmedOrderId, receipt.receipt_number || orderId.trim()),
       ),
     );
+  }
+
+  createRefundRequest(
+    orderId: string,
+    body: CreateRefundBody,
+    idempotencyKey: string,
+  ): Observable<CreateRefundResult> {
+    const trimmedOrderId = encodeURIComponent(orderId.trim());
+    let headers = new HttpHeaders();
+    const trimmedKey = (idempotencyKey ?? '').trim();
+    if (trimmedKey) {
+      headers = headers.set('Idempotency-Key', trimmedKey);
+    }
+
+    return this.http
+      .post<ApiEnvelope<BuyerRefund>>(
+        `${this.baseUrl}/orders/${trimmedOrderId}/refund-requests`,
+        body,
+        {
+          headers,
+          observe: 'response',
+        },
+      )
+      .pipe(
+        map((resp) => ({
+          refund: resp.body!.data,
+          replayed: resp.status === 200,
+        })),
+        catchError((err) => this.handleError(err)),
+      );
+  }
+
+  listRefunds(
+    page = 1,
+    pageSize = 20,
+    status?: RefundStatus,
+  ): Observable<PaginatedRefunds> {
+    let params = new HttpParams()
+      .set('page', String(page))
+      .set('page_size', String(pageSize));
+    if (status) {
+      params = params.set('status', status);
+    }
+
+    return this.http
+      .get<PaginatedRefunds>(`${this.baseUrl}/me/refunds`, { params })
+      .pipe(
+        map((res) => ({
+          data: res.data ?? [],
+          meta: res.meta ?? { page, page_size: pageSize, total: 0 },
+        })),
+        catchError((err) => this.handleError(err)),
+      );
+  }
+
+  getRefund(id: string): Observable<BuyerRefund> {
+    const trimmedId = encodeURIComponent(id.trim());
+    return this.http
+      .get<ApiEnvelope<BuyerRefund>>(`${this.baseUrl}/me/refunds/${trimmedId}`)
+      .pipe(
+        map((res) => res.data),
+        catchError((err) => this.handleError(err)),
+      );
+  }
+
+  getSellerEarnings(
+    rangeDays: 7 | 30 | 90 = 30,
+    page = 1,
+    pageSize = 20,
+  ): Observable<SellerEarningsResponse> {
+    const params = new HttpParams()
+      .set('range_days', String(rangeDays))
+      .set('page', String(page))
+      .set('page_size', String(pageSize));
+
+    return this.http
+      .get<SellerEarningsResponse>(`${this.baseUrl}/seller/earnings`, { params })
+      .pipe(
+        map((res) => ({
+          data: {
+            summary: res.data?.summary ?? {
+              pending_cents: 0,
+              available_cents: 0,
+              paid_cents: 0,
+              currency: 'USD',
+            },
+            transactions: res.data?.transactions ?? [],
+            payouts: res.data?.payouts ?? [],
+          },
+          meta: res.meta ?? { page, page_size: pageSize, total: 0 },
+        })),
+        catchError((err) => this.handleError(err)),
+      );
   }
 
   private fetchReceiptBlob(

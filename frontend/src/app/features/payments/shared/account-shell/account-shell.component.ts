@@ -8,6 +8,7 @@ export type AccountNavItemId =
   | 'orders'
   | 'payments'
   | 'refunds'
+  | 'returns'
   | 'addresses'
   | 'notifications'
   | 'settings';
@@ -51,6 +52,10 @@ export class AccountShellComponent {
   ];
 
   isActive(id: AccountNavItemId): boolean {
-    return this.activeItem() === id;
+    const active = this.activeItem();
+    if (id === 'refunds' && (active === 'refunds' || active === 'returns')) {
+      return true;
+    }
+    return active === id;
   }
 }
