@@ -1,0 +1,184 @@
+<app-header></app-header>
+<!-- Hero Section -->
+<section class="relative overflow-hidden bg-[#F7F3EE]">
+  <div class="grid min-h-[430px] lg:grid-cols-2">
+
+    <!-- Left: Hero Text -->
+    <div class="relative z-10 flex flex-col justify-center px-8 py-14 md:px-16 lg:pl-20">
+      <h1 class="max-w-lg font-serif text-5xl font-bold leading-[1.05] text-[#14213A] md:text-6xl lg:text-7xl">
+        Handmade<br />
+        with purpose.
+      </h1>
+
+      <p class="mt-6 max-w-md text-base leading-relaxed text-[#526071]">
+        Unique handmade treasures from Sri Lankan artisans.<br />
+        Real people. Brighter communities. A more mindful world.
+      </p>
+
+      <div class="mt-6">
+        <a
+          routerLink="/shop"
+          class="inline-flex rounded-md bg-[#B6502C] px-7 py-3 font-semibold text-white transition hover:bg-[#994022]">
+          Shop handmade →
+        </a>
+      </div>
+
+      <!-- Values -->
+      <div class="mt-10 grid max-w-lg grid-cols-3 gap-4 text-xs text-[#526071]">
+        <div>
+          <span class="mb-2 block text-2xl">🌿</span>
+          Support artisan livelihoods
+        </div>
+
+        <div>
+          <span class="mb-2 block text-2xl">🤝</span>
+          Authentic Sri Lankan craftsmanship
+        </div>
+
+        <div>
+          <span class="mb-2 block text-2xl">🌍</span>
+          A more mindful and connected world
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Hero Image -->
+    <div class="relative min-h-[320px] lg:min-h-[430px]">
+      <img
+        src="/images/hero-craftbridge.jpg"
+        alt="Sri Lankan handmade pottery and textiles"
+        class="absolute inset-0 h-full w-full object-cover"
+      />
+    </div>
+
+  </div>
+</section>
+
+
+<!-- Shop by Category -->
+<section class="bg-[#FAF7F2] px-6 py-12">
+  <div class="mx-auto max-w-5xl">
+
+    <div class="grid grid-cols-2 gap-8 text-center sm:grid-cols-3 md:grid-cols-5">
+
+      @for (category of categories; track category.name) {
+        <a
+          [routerLink]="['/shop']"
+          [queryParams]="{ search: category.search }"
+          class="group flex flex-col items-center gap-3">
+
+          <!-- Circular Category Image -->
+          <div
+            class="h-28 w-28 overflow-hidden rounded-full border-4 border-white shadow-md transition duration-300 group-hover:scale-105 md:h-36 md:w-36">
+
+            <img
+              [src]="category.image"
+              [alt]="category.name + ' handmade products'"
+              loading="lazy"
+              class="h-full w-full object-cover"
+            />
+
+          </div>
+
+          <!-- Category Name -->
+          <span class="text-sm font-semibold text-[#14213A]">
+            {{ category.name }}
+          </span>
+
+        </a>
+      }
+
+    </div>
+  </div>
+</section>
+
+
+
+<!-- Featured Products -->
+<section class="bg-white px-6 py-12">
+  <div class="mx-auto max-w-7xl">
+
+    <div class="mb-7 flex flex-wrap items-center justify-between gap-4">
+      <h2 class="font-serif text-3xl font-bold text-[#14213A]">
+        Featured from Sri Lankan Artisans
+      </h2>
+
+      <a
+        routerLink="/shop"
+        class="text-sm font-semibold text-[#B6502C] hover:underline">
+        View all products →
+      </a>
+    </div>
+
+    @if (featuredProducts.length > 0) {
+
+      <!-- Real products will appear here -->
+      <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        @for (product of featuredProducts; track product.id) {
+          <app-product-card
+            [product]="product">
+          </app-product-card>
+        }
+      </div>
+
+    } @else {
+
+      <!-- Empty state until Catalog API integration -->
+      <div
+        class="rounded-xl border border-[#E8E1D8] bg-[#FAF7F2] px-6 py-12 text-center">
+
+        <h3 class="text-lg font-semibold text-[#14213A]">
+          Featured products coming soon
+        </h3>
+
+        <p class="mt-3 text-sm text-[#526071]">
+          Products from Sri Lankan artisans will appear here
+          when the marketplace catalog is available.
+        </p>
+
+      </div>
+
+    }
+
+  </div>
+</section>
+
+
+<!-- CraftBridge Benefits -->
+<section class="border-t border-[#E8E1D8] bg-white px-6 py-8">
+  <div class="mx-auto grid max-w-7xl gap-8 sm:grid-cols-2 lg:grid-cols-4">
+
+    <div class="flex items-center gap-3">
+      <span class="text-3xl">♡</span>
+      <div>
+        <h3 class="font-semibold text-[#14213A]">Meaningful impact</h3>
+        <p class="text-xs text-gray-500">Stronger artisan communities</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <span class="text-3xl">🌿</span>
+      <div>
+        <h3 class="font-semibold text-[#14213A]">Authentic & handmade</h3>
+        <p class="text-xs text-gray-500">Real craft. Real people.</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <span class="text-3xl">♢</span>
+      <div>
+        <h3 class="font-semibold text-[#14213A]">Secure shopping</h3>
+        <p class="text-xs text-gray-500">Shop with confidence</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <span class="text-3xl">🚚</span>
+      <div>
+        <h3 class="font-semibold text-[#14213A]">Global delivery</h3>
+        <p class="text-xs text-gray-500">Sri Lankan craft to your home</p>
+      </div>
+    </div>
+
+  </div>
+</section>

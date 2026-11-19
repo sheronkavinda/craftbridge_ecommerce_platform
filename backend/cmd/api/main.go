@@ -16,6 +16,8 @@ import (
 	"craftbridge/backend/internal/modules/receipt"
 	"craftbridge/backend/internal/modules/refund"
 	"craftbridge/backend/internal/modules/report"
+	"craftbridge/backend/internal/modules/storefront"
+	"craftbridge/backend/internal/modules/wishlist"
 	"craftbridge/backend/internal/platform/config"
 	"craftbridge/backend/internal/platform/database"
 	platformhttp "craftbridge/backend/internal/platform/http"
@@ -287,6 +289,8 @@ func main() {
 			audit.RegisterRoutes(v1, auditHandler)
 			report.RegisterRoutes(v1, reportHandler)
 			admin.RegisterRoutes(v1, adminHandler)
+		    storefront.RegisterRoutes(v1)
+			wishlist.RegisterRoutes(v1, dbPool)
 			payment.RegisterRoutes(v1, paymentHandler)
 			refund.RegisterRoutes(v1, refundHandler)
 			receipt.RegisterRoutes(v1, receiptHandler)

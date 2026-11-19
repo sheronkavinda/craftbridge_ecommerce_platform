@@ -1,0 +1,86 @@
+
+<article class="group overflow-hidden rounded-xl border border-[#E8E1D8] bg-white transition duration-300 hover:shadow-lg">
+
+  <!-- Product Image -->
+  <div class="relative aspect-square overflow-hidden bg-[#F5F0E9]">
+
+    <a
+      [routerLink]="['/products', product().id]"
+      class="block h-full w-full"
+    >
+      @if (product().imageUrl) {
+        <img
+          [src]="product().imageUrl"
+          [alt]="product().name"
+          loading="lazy"
+          class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+        />
+      } @else {
+        <div class="flex h-full items-center justify-center text-sm text-gray-500">
+          Image unavailable
+        </div>
+      }
+    </a>
+
+    <!-- Wishlist Button -->
+    <button
+      type="button"
+      (click)="onWishlistClick()"
+      [attr.aria-label]="product().isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'"
+      [attr.aria-pressed]="product().isWishlisted"
+      class="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-md transition hover:scale-110"
+    >
+      <span
+        class="text-2xl"
+        [class.text-[#B6502C]]="product().isWishlisted"
+        [class.text-[#14213A]]="!product().isWishlisted"
+      >
+        {{ product().isWishlisted ? '♥' : '♡' }}
+      </span>
+    </button>
+
+  </div>
+
+  <!-- Product Information -->
+  <div class="p-4">
+
+    <!-- Artisan Name -->
+    <p class="mb-1 text-xs text-[#7B756F]">
+      {{ product().artisanName }}
+    </p>
+
+    <!-- Product Name -->
+    <a [routerLink]="['/products', product().id]">
+      <h3 class="min-h-12 text-base font-semibold text-[#14213A] hover:text-[#B6502C]">
+        {{ product().name }}
+      </h3>
+    </a>
+
+    <!-- Rating -->
+    <div class="mt-2 flex items-center gap-2 text-sm">
+      @if (product().rating !== null) {
+        <span class="text-[#D69A32]">★</span>
+
+        <span class="font-medium text-[#14213A]">
+          {{ product().rating }}
+        </span>
+
+        <span class="text-gray-500">
+          ({{ product().reviewCount }})
+        </span>
+      } @else {
+        <span class="text-gray-400">
+          No reviews yet
+        </span>
+      }
+    </div>
+
+    <!-- Price -->
+    <div class="mt-3">
+      <p class="text-lg font-bold text-[#B6502C]">
+        {{ product().currency }} {{ product().price.toFixed(2) }}
+      </p>
+    </div>
+
+  </div>
+</article>
