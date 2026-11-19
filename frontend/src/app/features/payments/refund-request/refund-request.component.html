@@ -1,0 +1,468 @@
+<app-account-shell activeItem="returns" [showShippingInfo]="true">
+  <section aria-labelledby="refunds-page-heading">
+    <!-- Page Title & Subtitle (Mockup 15) -->
+    <div class="mb-6">
+      <h1
+        id="refunds-page-heading"
+        class="font-serif-display text-3xl sm:text-4xl font-bold text-navy tracking-tight"
+      >
+        Returns &amp; Refunds
+      </h1>
+      <p class="mt-1.5 text-sm sm:text-base text-ink-secondary">
+        Request a refund, check the status of your requests, and learn about our policy.
+      </p>
+    </div>
+
+    @if (loading()) {
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-pulse motion-reduce:animate-none" data-testid="refunds-loading">
+        <div class="lg:col-span-7 bg-surface border border-line rounded-2xl p-6 h-96"></div>
+        <div class="lg:col-span-5 bg-surface border border-line rounded-2xl p-6 h-96"></div>
+      </div>
+    } @else if (loadError(); as err) {
+      <div
+        role="alert"
+        data-testid="refunds-load-error"
+        class="bg-surface border border-line rounded-2xl p-8 text-center shadow-xs"
+      >
+        <p class="text-base text-ink">{{ err }}</p>
+        <div class="mt-5">
+          <button
+            type="button"
+            data-testid="refunds-retry-btn"
+            (click)="loadInitialData()"
+            class="inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-2.5 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    } @else {
+      <!-- Two-Column Layout (Mockup 15) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <!-- LEFT COLUMN: Request a refund form -->
+        <div class="lg:col-span-7 bg-surface border border-line rounded-2xl p-5 sm:p-7 shadow-xs">
+          <h2 class="font-serif-display text-xl sm:text-2xl font-bold text-navy">
+            Request a refund
+          </h2>
+          <p class="mt-1 text-xs sm:text-sm text-ink-secondary">
+            Tell us what happened with your order. We'll review your request and get back to you soon.
+          </p>
+
+          @if (submitError(); as subErr) {
+            <div
+              role="alert"
+              data-testid="refund-submit-error"
+              class="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-xs sm:text-sm text-red-900"
+            >
+              {{ subErr }}
+            </div>
+          }
+
+          @if (replayMessage(); as replayMsg) {
+            <div
+              role="status"
+              data-testid="refund-replay-banner"
+              class="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs sm:text-sm text-amber-950 font-medium"
+            >
+              {{ replayMsg }}
+            </div>
+          }
+
+          @if (submitSuccessMessage(); as okMsg) {
+            <div
+              role="status"
+              data-testid="refund-success-banner"
+              class="mt-4 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs sm:text-sm text-emerald-950 font-medium"
+            >
+              {{ okMsg }}
+            </div>
+          }
+
+          @if (paidOrders().length === 0) {
+            <div class="mt-6 rounded-xl border border-line bg-cream-50 p-6 text-center text-sm text-ink-secondary" data-testid="no-paid-orders">
+              You don't have any paid orders eligible for a refund request yet.
+            </div>
+          } @else {
+            <form class="mt-5 space-y-5" (submit)="$event.preventDefault(); submitRefundRequest()" novalidate>
+              <!-- Order Picker -->
+              <div>
+                <label for="refund-order-select" class="block text-xs font-semibold text-ink mb-1.5">
+                  Select paid order <span class="text-terracotta">*</span>
+                </label>
+                <select
+                  id="refund-order-select"
+                  data-testid="refund-order-select"
+                  [value]="selectedOrderId()"
+                  (change)="selectOrder($any($event.target).value)"
+                  class="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  @for (ord of paidOrders(); track ord.order_id) {
+                    <option [value]="ord.order_id">
+                      #{{ ord.order_number || ord.order_id }} - {{ ord.amount_cents | money: ord.currency }} - paid {{ (ord.completed_at || ord.created_at) | date: 'MMM d, y' }}
+                    </option>
+                  }
+                </select>
+              </div>
+
+              <!-- Selected Order Preview Card -->
+              @if (selectedPaidOrder(); as ord) {
+                <div class="flex items-center gap-4 rounded-xl border border-line bg-cream-50/70 p-3.5">
+                  <div
+                    class="w-16 h-16 rounded-xl bg-cream-100 border border-line flex items-center justify-center text-navy shrink-0"
+                    aria-hidden="true"
+                  >
+                    <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Zm0 9 8-4.5M12 12v9m0-9L4 7.5" />
+                    </svg>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-semibold text-navy truncate">
+                      Order #{{ ord.order_number || ord.order_id }}
+                    </div>
+                    <div class="text-xs text-ink-secondary">
+                      Paid on {{ (ord.completed_at || ord.created_at) | date: 'MMM d, y' }}
+                    </div>
+                    <div class="mt-1 text-sm font-bold text-navy">
+                      {{ ord.amount_cents | money: ord.currency }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Eligibility Banner -->
+                @if (isWithinRefundWindow()) {
+                  <div
+                    data-testid="eligibility-banner"
+                    class="flex items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs"
+                  >
+                    <div class="flex items-start gap-2.5">
+                      <span class="mt-0.5 inline-flex w-5 h-5 rounded-full bg-emerald-700 text-white items-center justify-center shrink-0" aria-hidden="true">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" />
+                        </svg>
+                      </span>
+                      <div>
+                        <div class="font-semibold text-emerald-950">Eligible for refund</div>
+                        <div class="text-emerald-900/80">
+                          This order was paid within our {{ 30 }}-day refund window (policy-dependent).
+                        </div>
+                      </div>
+                    </div>
+                    <!-- TODO: Link to public refund policy modal/page -->
+                    <a href="#" class="shrink-0 font-semibold text-emerald-950 underline hover:text-terracotta">
+                      View refund policy
+                    </a>
+                  </div>
+                } @else {
+                  <div
+                    data-testid="eligibility-banner"
+                    class="flex items-start justify-between gap-3 rounded-xl border border-line bg-cream-100/80 px-4 py-3 text-xs"
+                  >
+                    <div>
+                      <div class="font-semibold text-ink">This order may be outside the refund window</div>
+                      <div class="text-ink-secondary">
+                        You can still submit your request; our system will verify eligibility.
+                      </div>
+                    </div>
+                    <a href="#" class="shrink-0 font-semibold text-navy underline hover:text-terracotta">
+                      View refund policy
+                    </a>
+                  </div>
+                }
+              }
+
+              <!-- Reason Select -->
+              <div>
+                <label for="refund-reason-select" class="block text-xs font-semibold text-ink mb-1.5">
+                  Reason for refund <span class="text-terracotta">*</span>
+                </label>
+                <select
+                  id="refund-reason-select"
+                  data-testid="refund-reason-select"
+                  [value]="reason()"
+                  (change)="onReasonChange($any($event.target).value)"
+                  class="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  @for (opt of reasonOptions; track opt.value) {
+                    <option [value]="opt.value">{{ opt.label }}</option>
+                  }
+                </select>
+                @if (formTouched() && reasonValidationError(); as rErr) {
+                  <p class="mt-1 text-xs text-red-700" data-testid="reason-error">{{ rErr }}</p>
+                }
+              </div>
+
+              <!-- Tell us more Textarea -->
+              <div>
+                <label for="refund-details-textarea" class="block text-xs font-semibold text-ink mb-1.5">
+                  Tell us more <span class="text-terracotta">*</span>
+                </label>
+                <textarea
+                  id="refund-details-textarea"
+                  data-testid="refund-details-textarea"
+                  rows="3"
+                  maxlength="500"
+                  placeholder="Describe what happened with your order (10–500 characters)..."
+                  [value]="details()"
+                  (input)="onDetailsInput($any($event.target).value)"
+                  class="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                ></textarea>
+                <div class="mt-1 flex items-center justify-between text-xs">
+                  @if (formTouched() && detailsValidationError(); as dErr) {
+                    <span class="text-red-700" data-testid="details-error">{{ dErr }}</span>
+                  } @else {
+                    <span class="text-ink-secondary">Minimum 10 characters</span>
+                  }
+                  <span class="text-ink-secondary" data-testid="details-counter">
+                    {{ detailsLength() }}/500
+                  </span>
+                </div>
+              </div>
+
+              <!-- Evidence Photos Block (Visually matches mockup-15, disabled until backend file storage exists) -->
+              <div data-testid="evidence-photos-section">
+                <div class="block text-xs font-semibold text-ink mb-0.5">
+                  Upload evidence photos
+                </div>
+                <p class="text-xs text-ink-secondary mb-2">
+                  Add clear photos showing the damage, packaging, and any relevant details.
+                </p>
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  data-testid="evidence-photos-disabled-btn"
+                  class="w-40 h-24 rounded-xl border-2 border-dashed border-line bg-cream-50/70 flex flex-col items-center justify-center text-ink-secondary opacity-65 cursor-not-allowed"
+                >
+                  <svg class="w-5 h-5 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <circle cx="8.5" cy="10.5" r="1.5" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m21 15-5-5L5 21" />
+                  </svg>
+                  <span class="text-xs font-semibold">Add photos</span>
+                  <span class="text-[10px]">JPG, PNG up to 5MB</span>
+                </button>
+                <p class="mt-1.5 text-xs text-ink-secondary" data-testid="evidence-photos-helper">
+                  Photo uploads will be available soon.
+                </p>
+              </div>
+
+              <!-- Requested Refund Amount -->
+              <div>
+                <label for="refund-amount-input" class="block text-xs font-semibold text-ink mb-1.5">
+                  Requested refund amount ({{ selectedOrderCurrency() }}) <span class="text-terracotta">*</span>
+                </label>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                  <div class="relative w-full sm:w-44">
+                    <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink-secondary select-none">
+                      $
+                    </span>
+                    <input
+                      id="refund-amount-input"
+                      data-testid="refund-amount-input"
+                      type="text"
+                      inputmode="decimal"
+                      placeholder="0.00"
+                      [value]="amountInput()"
+                      (input)="onAmountInput($any($event.target).value)"
+                      class="w-full rounded-xl border border-line bg-surface pl-8 pr-3.5 py-2.5 text-sm font-semibold text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    />
+                  </div>
+                  <span class="text-xs text-ink-secondary" data-testid="max-refundable-helper">
+                    For this order, the maximum refund is {{ maxRefundableCents() | money: selectedOrderCurrency() }}.
+                  </span>
+                </div>
+                @if (formTouched() && amountValidationError(); as aErr) {
+                  <p class="mt-1 text-xs text-red-700" data-testid="amount-error">{{ aErr }}</p>
+                }
+              </div>
+
+              <!-- Submit Request Button -->
+              <button
+                type="submit"
+                data-testid="submit-refund-btn"
+                [disabled]="submitting() || maxRefundableCents() === 0"
+                class="w-full inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 disabled:opacity-55 text-white font-semibold text-sm py-3.5 px-6 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                {{ submitting() ? 'Submitting request...' : 'Submit request' }}
+              </button>
+            </form>
+          }
+        </div>
+
+        <!-- RIGHT COLUMN: Existing refund request & timeline -->
+        <div class="lg:col-span-5 bg-surface border border-line rounded-2xl p-5 sm:p-7 shadow-xs">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="font-serif-display text-xl font-bold text-navy">
+              Existing refund request
+            </h2>
+            <a
+              href="#your-refund-requests"
+              class="text-xs font-semibold text-terracotta hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded"
+            >
+              View all requests →
+            </a>
+          </div>
+
+          @if (selectedRefund(); as active) {
+            <!-- Status Banner -->
+            <div
+              data-testid="existing-refund-status-banner"
+              class="mt-4 flex items-start gap-3 rounded-xl border p-3.5"
+              [class]="statusBannerClasses(active.status)"
+            >
+              <svg class="w-5 h-5 text-terracotta shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 2" />
+              </svg>
+              <div class="text-xs">
+                <div class="font-semibold">{{ statusBannerTitle(active.status) }}</div>
+                <div class="mt-0.5 opacity-90">{{ statusBannerSubtitle(active.status) }}</div>
+              </div>
+            </div>
+
+            <!-- Request Summary Tile -->
+            <div class="mt-4 flex items-center gap-3.5 pb-5 border-b border-line" data-testid="existing-refund-summary">
+              <div
+                class="w-16 h-16 rounded-xl bg-cream-100 border border-line flex items-center justify-center text-navy shrink-0"
+                aria-hidden="true"
+              >
+                <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" />
+                </svg>
+              </div>
+              <div class="min-w-0 flex-1 text-xs">
+                <div class="text-sm font-semibold text-navy truncate">
+                  {{ formatReasonLabel(active.reason) }}
+                </div>
+                <div class="text-ink-secondary">
+                  Order #{{ active.order_number || active.order_id }}
+                </div>
+                <div class="text-ink-secondary">
+                  Requested on {{ active.requested_at | date: 'MMM d, y' }}
+                </div>
+                <div class="mt-1 text-sm font-bold text-navy">
+                  {{ active.amount_cents | money: active.currency }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Request Timeline Vertical Stepper -->
+            <div class="mt-5" data-testid="refund-timeline">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-ink-secondary mb-3.5">
+                Request timeline
+              </h3>
+              <ol class="space-y-4">
+                @for (step of activeTimelineRows(); track step.key; let last = $last) {
+                  <li
+                    class="relative flex items-start gap-3"
+                    data-testid="timeline-step"
+                    [attr.data-step-key]="step.key"
+                    [attr.data-step-done]="step.done"
+                  >
+                    @if (!last) {
+                      <span
+                        class="absolute left-2.5 top-5 -bottom-4 w-0.5"
+                        [class]="step.done ? 'bg-terracotta/50' : 'bg-line'"
+                        aria-hidden="true"
+                      ></span>
+                    }
+
+                    @if (step.done) {
+                      <span
+                        class="relative z-10 mt-0.5 w-5 h-5 rounded-full bg-terracotta text-white flex items-center justify-center shrink-0"
+                        aria-hidden="true"
+                      >
+                        <span class="w-2 h-2 rounded-full bg-white"></span>
+                      </span>
+                    } @else {
+                      <span
+                        class="relative z-10 mt-0.5 w-5 h-5 rounded-full border-2 border-line bg-surface shrink-0"
+                        aria-hidden="true"
+                      ></span>
+                    }
+
+                    <div class="min-w-0 flex-1 text-xs">
+                      <div class="font-semibold text-ink">{{ step.title }}</div>
+                      @if (step.at) {
+                        <div class="text-[11px] text-ink-secondary">
+                          {{ step.at | date: 'MMM d, y, h:mm a' }}
+                        </div>
+                      }
+                      <div class="mt-0.5 text-ink-secondary">{{ step.description }}</div>
+                    </div>
+                  </li>
+                }
+              </ol>
+            </div>
+          } @else {
+            <div class="mt-6 rounded-xl border border-line bg-cream-50/70 p-6 text-center text-xs text-ink-secondary" data-testid="no-existing-refund">
+              No refund requests yet. Submit a request on the left to track its review and payout timeline here.
+            </div>
+          }
+
+          <!-- Our Returns & Refunds Policy Card -->
+          <div class="mt-6 rounded-xl border border-line bg-cream-50/80 p-4 flex items-start justify-between gap-3 text-xs">
+            <div class="flex items-start gap-2.5">
+              <svg class="w-5 h-5 text-navy shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 3h7l5 5v13H7V3Zm7 0v5h5" />
+              </svg>
+              <div>
+                <div class="font-semibold text-ink">Our Returns &amp; Refunds Policy</div>
+                <div class="mt-0.5 text-ink-secondary">
+                  Refund time limits, eligible items, and refund details are configurable and may vary by product. Please review our full policy for details.
+                </div>
+              </div>
+            </div>
+            <!-- TODO: Link to full returns policy page -->
+            <a href="#" class="shrink-0 font-semibold text-navy underline hover:text-terracotta">
+              Read the full policy
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- BELOW: Your requests list -->
+      <div id="your-refund-requests" class="mt-8 bg-surface border border-line rounded-2xl p-5 sm:p-7 shadow-xs">
+        <h2 class="font-serif-display text-xl font-bold text-navy mb-4">
+          Your requests
+        </h2>
+
+        @if (refunds().length === 0) {
+          <p class="text-sm text-ink-secondary" data-testid="refunds-list-empty">
+            No refund requests yet.
+          </p>
+        } @else {
+          <div class="divide-y divide-line">
+            @for (item of refunds(); track item.id) {
+              <button
+                type="button"
+                data-testid="refund-list-item"
+                (click)="selectExistingRefund(item)"
+                class="w-full text-left py-3.5 px-3 -mx-3 rounded-xl hover:bg-cream-50 transition-colors flex flex-wrap items-center justify-between gap-3 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                [class.bg-cream-100]="selectedRefund()?.id === item.id"
+              >
+                <div>
+                  <div class="text-sm font-semibold text-navy">
+                    Order #{{ item.order_number || item.order_id }} • {{ formatReasonLabel(item.reason) }}
+                  </div>
+                  <div class="text-xs text-ink-secondary">
+                    Requested on {{ item.requested_at | date: 'MMM d, y' }}
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <span class="font-serif-display text-sm font-bold text-navy">
+                    {{ item.amount_cents | money: item.currency }}
+                  </span>
+                  <span class="inline-flex items-center rounded-full px-3 py-0.5 text-xs font-semibold bg-cream-100 text-navy">
+                    {{ item.status }}
+                  </span>
+                </div>
+              </button>
+            }
+          </div>
+        }
+      </div>
+    }
+  </section>
+</app-account-shell>

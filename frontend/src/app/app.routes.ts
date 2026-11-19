@@ -64,6 +64,12 @@ export const routes: Routes = [
 
   // Unknown routes go to Home
   {
+    // TODO(member-01): Guard with the real buyer auth guard once Member 01's login exists.
+    path: 'payments',
+    loadChildren: () =>
+      import('./features/payments/payments.routes').then((m) => m.PAYMENTS_ROUTES),
+  },
+  {
     path: '**',
     redirectTo: '',
   },

@@ -1,0 +1,38 @@
+<span
+  data-testid="payment-status-chip"
+  [attr.data-status]="status()"
+  class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
+  [class]="badgeClasses()"
+>
+  @switch (status()) {
+    @case ('SUCCESS') {
+      <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" />
+      </svg>
+    }
+    @case ('PENDING') {
+      <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 2" />
+      </svg>
+    }
+    @case ('FAILED') {
+      <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path stroke-linecap="round" d="m15 9-6 6m0-6 6 6" />
+      </svg>
+    }
+    @case ('CANCELLED') {
+      <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path stroke-linecap="round" d="M5.7 5.7 18.3 18.3" />
+      </svg>
+    }
+    @default {
+      <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 3h12M6 21h12M8 3v4l4 5-4 5v4M16 3v4l-4 5 4 5v4" />
+      </svg>
+    }
+  }
+  <span>{{ label() }}</span>
+</span>

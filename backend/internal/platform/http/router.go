@@ -159,6 +159,72 @@ func RequireAdminRole() gin.HandlerFunc {
 	}
 }
 
+// RequireBuyerRole enforces Role-Based Access Control (RBAC) for buyer operations.
+// It blocks any caller that is not authenticated with the 'buyer' role.
+func RequireBuyerRole() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: valid authentication credentials required",
+			})
+			return
+		}
+
+		if !strings.EqualFold(actorRole, "buyer") {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "forbidden: buyer role required",
+			})
+			return
+		}
+
+		if actorID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: missing actor identity",
+			})
+			return
+		}
+
+		c.Set(ContextKeyActorID, actorID)
+		c.Set(ContextKeyActorName, actorName)
+		c.Set(ContextKeyActorRole, "buyer")
+		c.Next()
+	}
+}
+
+// RequireSellerRole enforces Role-Based Access Control (RBAC) for seller operations.
+// It blocks any caller that is not authenticated with the 'seller' role.
+func RequireSellerRole() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: valid authentication credentials required",
+			})
+			return
+		}
+
+		if !strings.EqualFold(actorRole, "seller") {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "forbidden: seller role required",
+			})
+			return
+		}
+
+		if actorID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "unauthorized: missing actor identity",
+			})
+			return
+		}
+
+		c.Set(ContextKeyActorID, actorID)
+		c.Set(ContextKeyActorName, actorName)
+		c.Set(ContextKeyActorRole, "seller")
+		c.Next()
+	}
+}
+
 func extractVerifiedIdentity(c *gin.Context) (actorID, actorName, actorRole string, err error) {
 	cfg := activeConfig.Load()
 	appEnv := "development"
@@ -307,7 +373,7 @@ func CORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, X-Actor-ID, X-Actor-Name, X-Actor-Role")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, X-Actor-ID, X-Actor-Name, X-Actor-Role, Idempotency-Key")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -362,7 +428,8 @@ const openAPISpecJSON = `{
     { "name": "Admin - Categories", "description": "Product catalog category management" },
     { "name": "Admin - Refunds", "description": "Administrative refund review and status transitions" },
     { "name": "Admin - Audit Logs", "description": "Immutable append-only administrative audit trail" },
-    { "name": "Reports", "description": "Platform revenue and seller sales aggregation reports" }
+    { "name": "Reports", "description": "Platform revenue and seller sales aggregation reports" },
+    { "name": "Payments", "description": "Buyer order payment initiation and gateway checkout" }
   ],
   "security": [
     { "BearerAuth": [] },
@@ -598,6 +665,141 @@ const openAPISpecJSON = `{
           "verified_payments": { "type": "number", "format": "double", "example": 4200.00 },
           "refunds": { "type": "number", "format": "double", "example": 120.00 },
           "net_revenue": { "type": "number", "format": "double", "example": 4080.00 }
+        }
+      },
+      "InitiatePaymentResponse": {
+        "type": "object",
+        "properties": {
+          "attempt_id": { "type": "string", "example": "att-1a2b3c4d5e6f7a8b" },
+          "status": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED", "EXPIRED", "CANCELLED"], "example": "PENDING" },
+          "checkout": {
+            "type": "object",
+            "properties": {
+              "checkout_url": { "type": "string", "example": "https://sandbox.payhere.lk/pay/checkout" },
+              "method": { "type": "string", "example": "POST" },
+              "fields": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "PayHereWebhookNotification": {
+        "type": "object",
+        "required": ["merchant_id", "order_id", "payhere_amount", "payhere_currency", "status_code", "md5sig"],
+        "properties": {
+          "merchant_id": { "type": "string", "example": "1211149" },
+          "order_id": { "type": "string", "description": "CraftBridge payment attempt ID", "example": "att-1a2b3c4d5e6f7a8b" },
+          "payment_id": { "type": "string", "example": "3200251485" },
+          "payhere_amount": { "type": "string", "example": "2000.00" },
+          "payhere_currency": { "type": "string", "example": "USD" },
+          "status_code": { "type": "string", "enum": ["2", "0", "-1", "-2", "-3"], "example": "2" },
+          "md5sig": { "type": "string", "example": "E5F8A9C1D2B3E4F5A6B7C8D9E0F1A2B3" },
+          "status_message": { "type": "string", "example": "Successfully received the VISA payment" },
+          "method": { "type": "string", "example": "VISA" }
+        }
+      },
+      "BuyerPaymentItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "att-1a2b3c4d5e6f7a8b" },
+          "order_id": { "type": "string", "example": "order-005" },
+          "order_number": { "type": "string", "example": "ORD-005" },
+          "order_status": { "type": "string", "example": "PAID" },
+          "status": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED", "EXPIRED", "CANCELLED"], "example": "SUCCESS" },
+          "amount_cents": { "type": "integer", "format": "int64", "example": 200000 },
+          "amount": { "type": "string", "example": "2000.00" },
+          "currency": { "type": "string", "example": "USD" },
+          "provider": { "type": "string", "example": "payhere_sandbox" },
+          "provider_reference": { "type": "string", "example": "3200251485" },
+          "public_reason": { "type": "string", "enum": ["payment_failed", "cancelled", "expired"], "example": "payment_failed" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ReconcileSummary": {
+        "type": "object",
+        "properties": {
+          "checked": { "type": "integer", "example": 3 },
+          "succeeded": { "type": "integer", "example": 1 },
+          "failed": { "type": "integer", "example": 1 },
+          "cancelled": { "type": "integer", "example": 0 },
+          "expired": { "type": "integer", "example": 1 },
+          "errors": { "type": "integer", "example": 0 }
+        }
+      },
+      "CreateRefundRequestInput": {
+        "type": "object",
+        "required": ["reason", "details", "amount"],
+        "properties": {
+          "reason": { "type": "string", "enum": ["ARRIVED_DAMAGED", "NOT_AS_DESCRIBED", "WRONG_ITEM", "LATE_DELIVERY", "CHANGED_MIND", "OTHER"], "example": "ARRIVED_DAMAGED" },
+          "details": { "type": "string", "minLength": 10, "maxLength": 500, "example": "Ceramic vase arrived cracked along the rim." },
+          "amount": { "type": "string", "example": "45.50" }
+        }
+      },
+      "BuyerRefundView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "ref-1a2b3c4d5e6f7a8b" },
+          "order_id": { "type": "string", "example": "order-005" },
+          "order_number": { "type": "string", "example": "ORD-005" },
+          "status": { "type": "string", "enum": ["PENDING", "APPROVED", "PROCESSED", "COMPLETED", "REJECTED"], "example": "COMPLETED" },
+          "reason": { "type": "string", "example": "ARRIVED_DAMAGED" },
+          "details": { "type": "string", "example": "Ceramic vase arrived cracked along the rim." },
+          "amount_cents": { "type": "integer", "format": "int64", "example": 4550 },
+          "amount": { "type": "string", "example": "45.50" },
+          "currency": { "type": "string", "example": "USD" },
+          "requested_at": { "type": "string", "format": "date-time" },
+          "decided_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "step": { "type": "string", "enum": ["submitted", "under_review", "approved", "refund_issued"] },
+                "at": { "type": "string", "format": "date-time" },
+                "done": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      },
+      "ReceiptView": {
+        "type": "object",
+        "properties": {
+          "receipt_number": { "type": "string", "example": "RCP-20261115-A1B2C3" },
+          "issued_at": { "type": "string", "format": "date-time" },
+          "order_id": { "type": "string", "example": "order-001" },
+          "order_number": { "type": "string", "example": "ORD-001" },
+          "buyer_name": { "type": "string", "example": "Nimal Perera" },
+          "buyer_email": { "type": "string", "example": "nimal@craftbridge.test" },
+          "payment_method": { "type": "string", "example": "PayHere Sandbox" },
+          "provider_reference": { "type": "string", "example": "3200251485" },
+          "amount_cents": { "type": "integer", "format": "int64", "example": 1250000 },
+          "amount": { "type": "string", "example": "12500.00" },
+          "currency": { "type": "string", "example": "USD" },
+          "items": { "type": "array", "items": { "type": "object" } },
+          "refunded_cents": { "type": "integer", "format": "int64", "example": 0 },
+          "net_paid_cents": { "type": "integer", "format": "int64", "example": 1250000 },
+          "status": { "type": "string", "enum": ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"], "example": "PAID" }
+        }
+      },
+      "SellerEarningsPayload": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "object",
+            "properties": {
+              "pending_cents": { "type": "integer", "format": "int64", "example": 9500 },
+              "available_cents": { "type": "integer", "format": "int64", "example": 12500 },
+              "paid_cents": { "type": "integer", "format": "int64", "example": 0 },
+              "currency": { "type": "string", "example": "USD" }
+            }
+          },
+          "transactions": { "type": "array", "items": { "type": "object" } },
+          "payouts": { "type": "array", "items": { "type": "object" } }
         }
       }
     }
@@ -1074,6 +1276,288 @@ const openAPISpecJSON = `{
         ],
         "responses": {
           "200": { "description": "Daily revenue breakdown" }
+        }
+      }
+    },
+    "/api/v1/orders/{id}/payments": {
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Initiate a payment attempt for a pending buyer order",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
+        ],
+        "responses": {
+          "201": {
+            "description": "Payment attempt created (or recent pending attempt reused) and checkout fields returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InitiatePaymentResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Order not found" },
+          "409": { "description": "Order is not pending payment" },
+          "503": { "description": "Payment provider not configured" }
+        }
+      }
+    },
+    "/api/v1/webhooks/payments/{provider}": {
+      "post": {
+        "tags": ["Payments", "Webhooks"],
+        "summary": "Payment provider webhook callback (cryptographically verified)",
+        "security": [],
+        "parameters": [
+          { "name": "provider", "in": "path", "required": true, "schema": { "type": "string", "example": "payhere_sandbox" }, "description": "Payment provider identifier" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": { "$ref": "#/components/schemas/PayHereWebhookNotification" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Webhook processed, duplicate ignored, or out-of-order transition ignored" },
+          "400": { "description": "Malformed notification payload" },
+          "401": { "description": "Invalid webhook signature or merchant mismatch" },
+          "404": { "description": "Unknown provider or payment attempt not found" },
+          "422": { "description": "Payment amount or currency mismatch against stored attempt" }
+        }
+      }
+    },
+    "/api/v1/me/payments": {
+      "get": {
+        "tags": ["Payments"],
+        "summary": "List the authenticated buyer's payment attempts (newest first)",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED", "EXPIRED", "CANCELLED"] } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated buyer payment attempts with meta" },
+          "400": { "description": "Invalid pagination or status filter" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" }
+        }
+      }
+    },
+    "/api/v1/me/payments/{id}": {
+      "get": {
+        "tags": ["Payments"],
+        "summary": "Get a single buyer payment attempt by ID",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Payment attempt ID" }
+        ],
+        "responses": {
+          "200": { "description": "Buyer payment attempt detail with order summary" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Payment attempt not found" }
+        }
+      }
+    },
+    "/api/v1/admin/payments/reconcile": {
+      "post": {
+        "tags": ["Payments", "Admin - Refunds"],
+        "summary": "Trigger an immediate reconciliation pass for timed-out PENDING payment attempts",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation pass summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReconcileSummary" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (admin role required)" }
+        }
+      }
+    },
+    "/api/v1/orders/{id}/refund-requests": {
+      "post": {
+        "tags": ["Refunds"],
+        "summary": "Submit a buyer refund request for a paid order",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" },
+          { "name": "Idempotency-Key", "in": "header", "required": false, "schema": { "type": "string", "maxLength": 100 }, "description": "Optional idempotency key" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateRefundRequestInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Refund request created" },
+          "200": { "description": "Idempotent duplicate returned existing refund" },
+          "400": { "description": "Invalid reason, details, or amount" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Order not found" },
+          "409": { "description": "Order has no verified payment or refund window expired" },
+          "422": { "description": "Amount exceeds refundable balance" }
+        }
+      }
+    },
+    "/api/v1/admin/refunds/{id}/approve": {
+      "post": {
+        "tags": ["Admin - Refunds", "Refunds"],
+        "summary": "Approve a refund request and execute provider refund",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Refund ID" }
+        ],
+        "responses": {
+          "200": { "description": "Refund approved and processed/completed with payment provider" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (admin role required)" },
+          "404": { "description": "Refund not found" },
+          "409": { "description": "Refund is rejected or status transition conflict" },
+          "502": { "description": "Payment provider refund failed" },
+          "503": { "description": "Refund payment provider not configured" }
+        }
+      }
+    },
+    "/api/v1/me/refunds": {
+      "get": {
+        "tags": ["Refunds"],
+        "summary": "List the authenticated buyer's refund requests with timelines",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "APPROVED", "PROCESSED", "COMPLETED", "REJECTED"] } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated buyer refunds with timelines" },
+          "400": { "description": "Invalid pagination or status filter" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" }
+        }
+      }
+    },
+    "/api/v1/me/refunds/{id}": {
+      "get": {
+        "tags": ["Refunds"],
+        "summary": "Get a single buyer refund request by ID with timeline",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Refund ID" }
+        ],
+        "responses": {
+          "200": { "description": "Buyer refund detail with timeline" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Refund not found" }
+        }
+      }
+    },
+    "/api/v1/me/orders/{id}/receipt": {
+      "get": {
+        "tags": ["Receipts"],
+        "summary": "View or lazily issue an owner-restricted digital payment receipt for a paid order",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Digital receipt details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReceiptView" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Order not found" },
+          "409": { "description": "No verified payment for this order" }
+        }
+      }
+    },
+    "/api/v1/me/orders/{id}/receipt/download": {
+      "get": {
+        "tags": ["Receipts"],
+        "summary": "Download a printable HTML payment receipt for a paid order",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Printable HTML receipt document",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (buyer role required)" },
+          "404": { "description": "Order not found" },
+          "409": { "description": "No verified payment for this order" }
+        }
+      }
+    },
+    "/api/v1/seller/earnings": {
+      "get": {
+        "tags": ["Payments", "Reports"],
+        "summary": "Get seller earnings projection (verified payments minus completed refunds and platform commission)",
+        "parameters": [
+          { "$ref": "#/components/parameters/XActorRole" },
+          { "$ref": "#/components/parameters/XActorID" },
+          { "$ref": "#/components/parameters/XActorName" },
+          { "name": "range_days", "in": "query", "schema": { "type": "integer", "enum": [7, 30, 90], "default": 30 } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Seller earnings summary, transactions, and payouts",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SellerEarningsPayload" }
+              }
+            }
+          },
+          "400": { "description": "Invalid range_days or pagination parameter" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (seller role required)" }
         }
       }
     }

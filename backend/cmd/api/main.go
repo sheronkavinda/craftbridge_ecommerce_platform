@@ -6,11 +6,15 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"craftbridge/backend/internal/modules/admin"
 	"craftbridge/backend/internal/modules/audit"
+	"craftbridge/backend/internal/modules/payment"
+	"craftbridge/backend/internal/modules/receipt"
+	"craftbridge/backend/internal/modules/refund"
 	"craftbridge/backend/internal/modules/report"
 	"craftbridge/backend/internal/modules/storefront"
 	"craftbridge/backend/internal/modules/wishlist"
@@ -20,6 +24,207 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+type paymentAuditAdapter struct {
+	auditSvc *audit.Service
+}
+
+func (a *paymentAuditAdapter) RecordAdminAction(
+	ctx context.Context,
+	actor payment.Actor,
+	requestID, action, target, outcome, details string,
+) {
+	if a == nil || a.auditSvc == nil {
+		return
+	}
+	_, _ = a.auditSvc.LogAction(ctx, audit.CreateAuditLogInput{
+		ActorID:   actor.ID,
+		ActorName: actor.Name,
+		Action:    action,
+		Target:    target,
+		Outcome:   outcome,
+		RequestID: requestID,
+		Details:   details,
+	})
+}
+
+type refundAuditAdapter struct {
+	auditSvc *audit.Service
+}
+
+func (a *refundAuditAdapter) RecordAdminAction(
+	ctx context.Context,
+	actor refund.Actor,
+	requestID, action, target, outcome, details string,
+) {
+	if a == nil || a.auditSvc == nil {
+		return
+	}
+	_, _ = a.auditSvc.LogAction(ctx, audit.CreateAuditLogInput{
+		ActorID:   actor.ID,
+		ActorName: actor.Name,
+		Action:    action,
+		Target:    target,
+		Outcome:   outcome,
+		RequestID: requestID,
+		Details:   details,
+	})
+}
+
+type refundGatewayAdapter struct {
+	refunder payment.Refunder
+}
+
+func (g *refundGatewayAdapter) RefundPayment(
+	ctx context.Context,
+	input refund.GatewayRefundInput,
+) (refund.GatewayRefundOutput, error) {
+	if g == nil || g.refunder == nil {
+		return refund.GatewayRefundOutput{}, refund.ErrGatewayNotConfigured
+	}
+	res, err := g.refunder.RefundPayment(ctx, payment.RefundRequestInput{
+		ProviderReference: input.ProviderReference,
+		AmountCents:       input.AmountCents,
+		Currency:          input.Currency,
+		Reason:            input.Reason,
+		IdempotencyKey:    input.IdempotencyKey,
+	})
+	if err != nil {
+		if errors.Is(err, payment.ErrProviderNotConfigured) {
+			return refund.GatewayRefundOutput{}, refund.ErrGatewayNotConfigured
+		}
+		return refund.GatewayRefundOutput{}, err
+	}
+
+	return refund.GatewayRefundOutput{
+		ProviderRefundReference: res.ProviderRefundReference,
+		Status:                  refund.GatewayRefundOutcome(res.Status),
+		Raw:                     res.Raw,
+	}, nil
+}
+
+type refundPaymentReaderAdapter struct {
+	paymentRepo *payment.Repository
+}
+
+func (p *refundPaymentReaderAdapter) GetPaidAttemptForOrder(
+	ctx context.Context,
+	orderID string,
+) (refund.PaidPayment, error) {
+	if p == nil || p.paymentRepo == nil {
+		return refund.PaidPayment{}, refund.ErrNoVerifiedPayment
+	}
+
+	ord, err := p.paymentRepo.GetOrderForPayment(ctx, orderID)
+	if err != nil {
+		if errors.Is(err, payment.ErrOrderNotFound) {
+			return refund.PaidPayment{}, refund.ErrOrderNotFound
+		}
+		return refund.PaidPayment{}, err
+	}
+
+	att, err := p.paymentRepo.GetLatestSuccessfulAttemptByOrder(ctx, ord.OrderID)
+	if err != nil {
+		return refund.PaidPayment{}, err
+	}
+	if att == nil {
+		return refund.PaidPayment{
+			OrderID:     ord.OrderID,
+			OrderNumber: ord.OrderNumber,
+			BuyerID:     ord.UserID,
+			SellerID:    ord.SellerID,
+		}, refund.ErrNoVerifiedPayment
+	}
+
+	provRef := att.ID
+	if att.ProviderReference != nil && strings.TrimSpace(*att.ProviderReference) != "" {
+		provRef = strings.TrimSpace(*att.ProviderReference)
+	}
+	completedAt := att.UpdatedAt
+	if att.CompletedAt != nil {
+		completedAt = *att.CompletedAt
+	}
+
+	return refund.PaidPayment{
+		AttemptID:         att.ID,
+		OrderID:           ord.OrderID,
+		OrderNumber:       ord.OrderNumber,
+		BuyerID:           ord.UserID,
+		SellerID:          ord.SellerID,
+		ProviderReference: provRef,
+		AmountCents:       att.AmountCents,
+		Currency:          att.Currency,
+		CompletedAt:       completedAt,
+	}, nil
+}
+
+type receiptPaymentReaderAdapter struct {
+	paymentRepo *payment.Repository
+}
+
+func (r *receiptPaymentReaderAdapter) GetVerifiedPaymentForOrder(
+	ctx context.Context,
+	orderID string,
+) (receipt.PaidOrderPayment, error) {
+	if r == nil || r.paymentRepo == nil {
+		return receipt.PaidOrderPayment{}, receipt.ErrNoVerifiedPayment
+	}
+
+	ord, err := r.paymentRepo.GetOrderForPayment(ctx, orderID)
+	if err != nil {
+		if errors.Is(err, payment.ErrOrderNotFound) {
+			return receipt.PaidOrderPayment{}, receipt.ErrOrderNotFound
+		}
+		return receipt.PaidOrderPayment{}, err
+	}
+
+	att, err := r.paymentRepo.GetLatestSuccessfulAttemptByOrder(ctx, ord.OrderID)
+	if err != nil {
+		return receipt.PaidOrderPayment{}, err
+	}
+	if att == nil {
+		return receipt.PaidOrderPayment{
+			OrderID:     ord.OrderID,
+			OrderNumber: ord.OrderNumber,
+			BuyerID:     ord.UserID,
+			BuyerName:   ord.BuyerName,
+			BuyerEmail:  ord.BuyerEmail,
+		}, receipt.ErrNoVerifiedPayment
+	}
+
+	provRef := att.ID
+	if att.ProviderReference != nil && strings.TrimSpace(*att.ProviderReference) != "" {
+		provRef = strings.TrimSpace(*att.ProviderReference)
+	}
+	completedAt := att.UpdatedAt
+	if att.CompletedAt != nil {
+		completedAt = *att.CompletedAt
+	}
+
+	return receipt.PaidOrderPayment{
+		AttemptID:         att.ID,
+		OrderID:           ord.OrderID,
+		OrderNumber:       ord.OrderNumber,
+		BuyerID:           ord.UserID,
+		BuyerName:         ord.BuyerName,
+		BuyerEmail:        ord.BuyerEmail,
+		AmountCents:       att.AmountCents,
+		Currency:          att.Currency,
+		Provider:          att.Provider,
+		ProviderReference: provRef,
+		CompletedAt:       completedAt,
+	}, nil
+}
+
+type receiptOrderSummaryAdapter struct{}
+
+func (receiptOrderSummaryAdapter) GetOrderSummary(_ context.Context, _ string) (receipt.OrderSummary, error) {
+	// With the current placeholder orders schema (which has no order_items table yet),
+	// return an empty items slice without inventing line items.
+	return receipt.OrderSummary{
+		Items: []receipt.ReceiptLineItem{},
+	}, nil
+}
 
 func main() {
 	cfg := config.Load()
@@ -47,6 +252,36 @@ func main() {
 	adminService := admin.NewService(adminRepo, auditService)
 	adminHandler := admin.NewHandler(adminService)
 
+	paymentProvider := payment.NewPayHereSandboxProvider(cfg)
+	paymentRepo := payment.NewRepository(dbPool)
+	paymentService := payment.NewService(paymentRepo, paymentRepo, paymentProvider)
+	paymentService.SetReconcileConfig(
+		time.Duration(cfg.PaymentReconcileAfterMinutes)*time.Minute,
+		time.Duration(cfg.PaymentAttemptTTLHours)*time.Hour,
+	)
+	paymentService.SetEarningsConfig(cfg.PlatformCommissionPercent, cfg.PayoutHoldDays)
+	paymentService.SetAuditRecorder(&paymentAuditAdapter{auditSvc: auditService})
+	paymentService.StartReconcileWorker(ctx, time.Duration(cfg.PaymentReconcileIntervalSeconds)*time.Second)
+	paymentHandler := payment.NewHandler(paymentService)
+
+	refundRepo := refund.NewRepository(dbPool)
+	refundService := refund.NewService(
+		refundRepo,
+		&refundPaymentReaderAdapter{paymentRepo: paymentRepo},
+		&refundGatewayAdapter{refunder: paymentProvider},
+	)
+	refundService.SetRefundWindowDays(cfg.RefundWindowDays)
+	refundService.SetAuditRecorder(&refundAuditAdapter{auditSvc: auditService})
+	refundHandler := refund.NewHandler(refundService)
+
+	receiptRepo := receipt.NewRepository(dbPool)
+	receiptService := receipt.NewService(
+		receiptRepo,
+		&receiptPaymentReaderAdapter{paymentRepo: paymentRepo},
+		receiptOrderSummaryAdapter{},
+	)
+	receiptHandler := receipt.NewHandler(receiptService)
+
 	router := platformhttp.NewRouter(
 		cfg,
 		dbPool,
@@ -54,8 +289,11 @@ func main() {
 			audit.RegisterRoutes(v1, auditHandler)
 			report.RegisterRoutes(v1, reportHandler)
 			admin.RegisterRoutes(v1, adminHandler)
-			storefront.RegisterRoutes(v1)
+		    storefront.RegisterRoutes(v1)
 			wishlist.RegisterRoutes(v1, dbPool)
+			payment.RegisterRoutes(v1, paymentHandler)
+			refund.RegisterRoutes(v1, refundHandler)
+			receipt.RegisterRoutes(v1, receiptHandler)
 		},
 	)
 

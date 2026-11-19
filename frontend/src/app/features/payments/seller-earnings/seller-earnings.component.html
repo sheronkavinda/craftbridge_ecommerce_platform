@@ -1,0 +1,490 @@
+<app-seller-shell activeItem="earnings">
+  <section aria-labelledby="seller-earnings-heading">
+    <!-- Page Title & Subtitle (Mockup 23) -->
+    <div>
+      <h1
+        id="seller-earnings-heading"
+        class="font-serif-display text-3xl sm:text-4xl font-bold text-navy tracking-tight"
+      >
+        Earnings
+      </h1>
+      <p class="mt-1 text-sm text-ink-secondary">
+        Track your sales, fees and payouts from your CraftBridge store.
+      </p>
+    </div>
+
+    <!-- Underline Tabs: Earnings | Payout History -->
+    <div
+      role="tablist"
+      aria-label="Seller earnings views"
+      class="mt-5 border-b border-line flex items-center gap-6"
+    >
+      <button
+        type="button"
+        role="tab"
+        data-testid="tab-earnings"
+        [attr.aria-selected]="activeTab() === 'earnings'"
+        (click)="selectTab('earnings')"
+        class="pb-3 text-sm font-semibold border-b-2 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        [class]="
+          activeTab() === 'earnings'
+            ? 'border-terracotta text-terracotta'
+            : 'border-transparent text-ink-secondary hover:text-ink'
+        "
+      >
+        Earnings
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        data-testid="tab-payouts"
+        [attr.aria-selected]="activeTab() === 'payouts'"
+        (click)="selectTab('payouts')"
+        class="pb-3 text-sm font-semibold border-b-2 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        [class]="
+          activeTab() === 'payouts'
+            ? 'border-terracotta text-terracotta'
+            : 'border-transparent text-ink-secondary hover:text-ink'
+        "
+      >
+        Payout History
+      </button>
+    </div>
+
+    @if (loading()) {
+      <div class="mt-6 space-y-6 animate-pulse motion-reduce:animate-none" data-testid="earnings-loading">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="h-28 rounded-2xl bg-surface border border-line"></div>
+          <div class="h-28 rounded-2xl bg-surface border border-line"></div>
+          <div class="h-28 rounded-2xl bg-surface border border-line"></div>
+        </div>
+        <div class="h-48 rounded-2xl bg-surface border border-line"></div>
+      </div>
+    } @else if (errorMessage(); as errMsg) {
+      <div
+        role="alert"
+        data-testid="earnings-error-alert"
+        class="mt-6 bg-surface border border-line rounded-2xl p-8 sm:p-10 text-center shadow-xs"
+      >
+        <p class="text-base sm:text-lg text-ink">{{ errMsg }}</p>
+        @if (errorStatus() !== 403) {
+          <div class="mt-5">
+            <button
+              type="button"
+              data-testid="earnings-retry-btn"
+              (click)="loadEarnings()"
+              class="inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-2.5 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              Try again
+            </button>
+          </div>
+        }
+      </div>
+    } @else {
+      @if (activeTab() === 'earnings') {
+        <!-- 3 Summary Cards (Mockup 23) -->
+        <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Pending Card -->
+          <div
+            data-testid="summary-card-pending"
+            class="bg-surface border border-line rounded-2xl p-5 shadow-xs flex items-center gap-4"
+          >
+            <div
+              class="w-12 h-12 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0"
+              aria-hidden="true"
+            >
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+                <circle cx="12" cy="12" r="9" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 2" />
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5 text-xs font-semibold text-ink-secondary">
+                <span>Pending</span>
+                <span
+                  tabindex="0"
+                  role="img"
+                  aria-label="Verified payments still inside the payout hold period"
+                  title="Verified payments still inside the payout hold period"
+                  class="inline-flex text-ink-secondary hover:text-ink cursor-help"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="9" />
+                    <path stroke-linecap="round" d="M12 16v-4m0-4h.01" />
+                  </svg>
+                </span>
+              </div>
+              <div class="mt-0.5 font-serif-display text-2xl font-bold text-navy" data-testid="pending-amount">
+                {{ summary().pending_cents | money: currency() }}
+              </div>
+              <div class="text-xs text-ink-secondary">From recent orders</div>
+            </div>
+          </div>
+
+          <!-- Available Card -->
+          <div
+            data-testid="summary-card-available"
+            class="bg-surface border border-line rounded-2xl p-5 shadow-xs flex items-center gap-4"
+          >
+            <div
+              class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0"
+              aria-hidden="true"
+            >
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 5c-7 0-13 5-14 14 9-1 14-7 14-14ZM5 19l6-6" />
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5 text-xs font-semibold text-ink-secondary">
+                <span>Available</span>
+                <span
+                  tabindex="0"
+                  role="img"
+                  aria-label="Past the hold period and not yet paid out"
+                  title="Past the hold period and not yet paid out"
+                  class="inline-flex text-ink-secondary hover:text-ink cursor-help"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="9" />
+                    <path stroke-linecap="round" d="M12 16v-4m0-4h.01" />
+                  </svg>
+                </span>
+              </div>
+              <div class="mt-0.5 font-serif-display text-2xl font-bold text-navy" data-testid="available-amount">
+                {{ summary().available_cents | money: currency() }}
+              </div>
+              <div class="text-xs text-ink-secondary">Ready for next payout</div>
+            </div>
+          </div>
+
+          <!-- Paid Card -->
+          <div
+            data-testid="summary-card-paid"
+            class="bg-surface border border-line rounded-2xl p-5 shadow-xs flex items-center gap-4"
+          >
+            <div
+              class="w-12 h-12 rounded-full bg-terracotta text-white flex items-center justify-center shrink-0"
+              aria-hidden="true"
+            >
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+                <ellipse cx="12" cy="7" rx="7" ry="3" />
+                <path d="M5 7v5c0 1.66 3.13 3 7 3s7-1.34 7-3V7" />
+                <path d="M5 12v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" />
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5 text-xs font-semibold text-ink-secondary">
+                <span>Paid</span>
+                <span
+                  tabindex="0"
+                  role="img"
+                  aria-label="Total recorded payouts"
+                  title="Total recorded payouts"
+                  class="inline-flex text-ink-secondary hover:text-ink cursor-help"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="9" />
+                    <path stroke-linecap="round" d="M12 16v-4m0-4h.01" />
+                  </svg>
+                </span>
+              </div>
+              <div class="mt-0.5 font-serif-display text-2xl font-bold text-navy" data-testid="paid-amount">
+                {{ summary().paid_cents | money: currency() }}
+              </div>
+              <div class="text-xs text-ink-secondary">Total paid to date</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transaction Breakdown Card (Mockup 23) -->
+        @if (selectedTransaction(); as sel) {
+          <div
+            data-testid="transaction-breakdown-card"
+            class="mt-6 bg-surface border border-line rounded-2xl p-5 sm:p-7 shadow-xs"
+          >
+            <h2 class="text-base font-bold text-navy">Transaction breakdown</h2>
+            <p class="text-xs text-ink-secondary">
+              Order earnings breakdown for your selected order
+            </p>
+
+            <div class="mt-4 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              <!-- Product & Order Summary -->
+              <div class="lg:col-span-6 flex items-center gap-4">
+                <div
+                  class="w-24 h-20 rounded-xl bg-cream-100 border border-line flex items-center justify-center text-navy shrink-0"
+                  aria-hidden="true"
+                >
+                  <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Zm0 9 8-4.5M12 12v9m0-9L4 7.5" />
+                  </svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="font-serif-display text-base font-bold text-navy truncate" data-testid="breakdown-title">
+                    {{ sel.product_title || ('Order #' + (sel.order_number || sel.order_id)) }}
+                  </div>
+                  <div class="text-xs text-ink-secondary">
+                    Order #{{ sel.order_number || sel.order_id }}
+                  </div>
+                  <div class="text-xs text-ink-secondary">
+                    Sold on {{ sel.date | date: 'MMM d, y' }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Math Rows -->
+              <div class="lg:col-span-6 space-y-2 text-sm">
+                <div class="flex items-center justify-between" data-testid="breakdown-merchandise">
+                  <span class="text-ink-secondary">Merchandise total</span>
+                  <span class="font-medium text-ink">{{ sel.gross_cents | money: currency() }}</span>
+                </div>
+                <div class="flex items-center justify-between" data-testid="breakdown-shipping">
+                  <span class="text-ink-secondary">Shipping collected</span>
+                  <span class="font-medium text-ink">{{ sel.shipping_cents | money: currency() }}</span>
+                </div>
+                <div class="flex items-center justify-between" data-testid="breakdown-commission">
+                  <span class="text-ink-secondary">Commission ({{ selectedCommissionPct() }}%)</span>
+                  <span class="font-medium text-ink">
+                    {{ negativeIfPositive(sel.commission_cents) | money: currency() }}
+                  </span>
+                </div>
+                <div class="flex items-center justify-between" data-testid="breakdown-refund">
+                  <span class="text-ink-secondary">Refund</span>
+                  <span class="font-medium text-ink">
+                    {{ negativeIfPositive(sel.refund_cents) | money: currency() }}
+                  </span>
+                </div>
+                <div
+                  class="pt-2.5 border-t border-line flex items-center justify-between text-base font-bold text-emerald-800"
+                  data-testid="breakdown-net"
+                >
+                  <span class="text-ink">Net to you</span>
+                  <span>{{ sel.net_cents | money: currency() }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Recent Transactions Card -->
+        <div class="mt-6 bg-surface border border-line rounded-2xl p-5 sm:p-7 shadow-xs">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-bold text-navy">Recent transactions</h2>
+              <p class="text-xs text-ink-secondary">Your order earnings and related fees</p>
+            </div>
+
+            <div>
+              <label for="earnings-range-select" class="sr-only">Filter by date range</label>
+              <select
+                id="earnings-range-select"
+                data-testid="earnings-range-select"
+                [value]="rangeDays()"
+                (change)="onRangeChange($any($event.target).value)"
+                class="rounded-xl border border-line bg-surface px-3.5 py-2 text-xs sm:text-sm font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                @for (opt of rangeOptions; track opt.value) {
+                  <option [value]="opt.value" [selected]="rangeDays() === opt.value">
+                    {{ opt.label }}
+                  </option>
+                }
+              </select>
+            </div>
+          </div>
+
+          @if (transactions().length === 0) {
+            <div class="py-10 text-center text-sm text-ink-secondary" data-testid="transactions-empty">
+              No earnings yet
+            </div>
+          } @else {
+            <!-- Desktop Table -->
+            <div class="hidden md:block overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs sm:text-sm" data-testid="transactions-table">
+                <caption class="sr-only">Recent seller order transactions and net earnings</caption>
+                <thead>
+                  <tr class="border-b border-line text-xs text-ink-secondary">
+                    <th scope="col" class="py-2.5 pr-3 font-semibold">Order #</th>
+                    <th scope="col" class="py-2.5 px-3 font-semibold">Date</th>
+                    <th scope="col" class="py-2.5 px-3 font-semibold">Product</th>
+                    <th scope="col" class="py-2.5 px-3 font-semibold text-right">Gross</th>
+                    <th scope="col" class="py-2.5 px-3 font-semibold text-right">Shipping</th>
+                    <th scope="col" class="py-2.5 px-3 font-semibold text-right">
+                      Commission ({{ tableCommissionPct() }}%)
+                    </th>
+                    <th scope="col" class="py-2.5 px-3 font-semibold text-right">Refund</th>
+                    <th scope="col" class="py-2.5 px-3 font-semibold text-right">Adjustments</th>
+                    <th scope="col" class="py-2.5 px-3 font-semibold text-right">Net</th>
+                    <th scope="col" class="py-2.5 pl-3 font-semibold text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-line">
+                  @for (tx of transactions(); track tx.order_id) {
+                    <tr
+                      data-testid="transaction-row"
+                      (click)="selectTransaction(tx)"
+                      class="hover:bg-cream-50/70 transition-colors cursor-pointer"
+                      [class.bg-cream-100]="selectedTransaction()?.order_id === tx.order_id"
+                    >
+                      <td class="py-3.5 pr-3 font-semibold text-navy">
+                        {{ tx.order_number || tx.order_id }}
+                      </td>
+                      <td class="py-3.5 px-3 text-ink-secondary">
+                        {{ tx.date | date: 'MMM d, y' }}
+                      </td>
+                      <td class="py-3.5 px-3 font-medium text-ink">
+                        {{ tx.product_title || ('Order #' + (tx.order_number || tx.order_id)) }}
+                      </td>
+                      <td class="py-3.5 px-3 text-right">
+                        {{ tx.gross_cents | money: currency() }}
+                      </td>
+                      <td class="py-3.5 px-3 text-right">
+                        {{ tx.shipping_cents | money: currency() }}
+                      </td>
+                      <td class="py-3.5 px-3 text-right">
+                        {{ negativeIfPositive(tx.commission_cents) | money: currency() }}
+                      </td>
+                      <td class="py-3.5 px-3 text-right">
+                        {{ negativeIfPositive(tx.refund_cents) | money: currency() }}
+                      </td>
+                      <td class="py-3.5 px-3 text-right">
+                        {{ tx.adjustments_cents | money: currency() }}
+                      </td>
+                      <td class="py-3.5 px-3 text-right font-semibold text-navy">
+                        {{ tx.net_cents | money: currency() }}
+                      </td>
+                      <td class="py-3.5 pl-3 text-right">
+                        @if (tx.status === 'COMPLETED') {
+                          <span class="inline-flex items-center rounded-full bg-emerald-100 text-emerald-900 px-2.5 py-0.5 text-xs font-semibold">
+                            Completed
+                          </span>
+                        } @else {
+                          <span class="inline-flex items-center rounded-full bg-slate-200 text-slate-800 px-2.5 py-0.5 text-xs font-semibold">
+                            Refunded
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Mobile Stacked Cards (< 768px) -->
+            <div class="md:hidden divide-y divide-line" data-testid="transactions-mobile-list">
+              @for (tx of transactions(); track tx.order_id) {
+                <button
+                  type="button"
+                  (click)="selectTransaction(tx)"
+                  class="w-full text-left py-3.5 space-y-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded-lg"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="font-semibold text-navy text-sm">
+                      {{ tx.order_number || tx.order_id }} • {{ tx.product_title || 'Order' }}
+                    </span>
+                    <span class="font-bold text-navy text-sm">
+                      {{ tx.net_cents | money: currency() }}
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between text-xs text-ink-secondary">
+                    <span>{{ tx.date | date: 'MMM d, y' }}</span>
+                    <span>{{ tx.status === 'COMPLETED' ? 'Completed' : 'Refunded' }}</span>
+                  </div>
+                </button>
+              }
+            </div>
+
+            <!-- Pagination Controls -->
+            @if (totalPages() > 1) {
+              <div class="mt-4 pt-3 border-t border-line flex items-center justify-between text-xs">
+                <span class="text-ink-secondary">Page {{ page() }} of {{ totalPages() }}</span>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    [disabled]="!hasPrevious()"
+                    (click)="goToPage(page() - 1)"
+                    class="rounded-lg border border-line px-3 py-1.5 font-semibold disabled:opacity-45 cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    [disabled]="!hasNext()"
+                    (click)="goToPage(page() + 1)"
+                    class="rounded-lg border border-line px-3 py-1.5 font-semibold disabled:opacity-45 cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            }
+          }
+        </div>
+      }
+
+      <!-- Payout History Card (shown on both Earnings tab and Payout History tab) -->
+      <div
+        data-testid="payout-history-card"
+        class="mt-6 bg-surface border border-line rounded-2xl p-5 sm:p-7 shadow-xs"
+      >
+        <h2 class="text-base font-bold text-navy">Payout history</h2>
+        <p class="text-xs text-ink-secondary mb-4">
+          Settlements are recorded by the platform.
+        </p>
+
+        @if (payouts().length === 0) {
+          <p class="py-6 text-center text-sm text-ink-secondary" data-testid="payouts-empty">
+            No payouts recorded yet. Settlements are recorded by the platform.
+          </p>
+        } @else {
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs sm:text-sm" data-testid="payouts-table">
+              <caption class="sr-only">Recorded seller payouts</caption>
+              <thead>
+                <tr class="border-b border-line text-xs text-ink-secondary">
+                  <th scope="col" class="py-2.5 pr-3 font-semibold">Payout #</th>
+                  <th scope="col" class="py-2.5 px-3 font-semibold">Date initiated</th>
+                  <th scope="col" class="py-2.5 px-3 font-semibold">Method</th>
+                  <th scope="col" class="py-2.5 px-3 font-semibold">External reference</th>
+                  <th scope="col" class="py-2.5 px-3 font-semibold">Orders included</th>
+                  <th scope="col" class="py-2.5 px-3 font-semibold text-right">Amount</th>
+                  <th scope="col" class="py-2.5 px-3 font-semibold">Status</th>
+                  <th scope="col" class="py-2.5 pl-3 font-semibold text-right">Settled date</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line">
+                @for (po of payouts(); track $index) {
+                  <tr>
+                    <td class="py-3 pr-3 font-semibold text-navy">
+                      {{ po.payout_number || po.id || '—' }}
+                    </td>
+                    <td class="py-3 px-3 text-ink-secondary">
+                      {{ (po.initiated_at || po.created_at) ? ((po.initiated_at || po.created_at) | date: 'MMM d, y') : '—' }}
+                    </td>
+                    <td class="py-3 px-3 text-ink">{{ po.method || 'Bank transfer' }}</td>
+                    <td class="py-3 px-3 font-mono text-xs text-ink">
+                      {{ po.external_reference || '—' }}
+                    </td>
+                    <td class="py-3 px-3 text-ink-secondary">
+                      {{ po.order_count != null ? (po.order_count + ' orders') : '—' }}
+                    </td>
+                    <td class="py-3 px-3 text-right font-semibold text-navy">
+                      {{ (po.amount_cents ?? 0) | money: (po.currency || currency()) }}
+                    </td>
+                    <td class="py-3 px-3">
+                      <span class="inline-flex items-center rounded-full bg-emerald-100 text-emerald-900 px-2.5 py-0.5 text-xs font-semibold">
+                        {{ po.status || 'Paid' }}
+                      </span>
+                    </td>
+                    <td class="py-3 pl-3 text-right text-ink-secondary">
+                      {{ po.settled_at ? (po.settled_at | date: 'MMM d, y') : '—' }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+  </section>
+</app-seller-shell>
