@@ -49,3 +49,6 @@ uploads/
 # Playwright output
 test-results/
 playwright-report/
+
+/backend/uploads/catalog/
+
