@@ -1,0 +1,267 @@
+<app-account-shell activeItem="payments" [showShippingInfo]="true">
+  <section aria-labelledby="payment-history-heading">
+    <!-- Page Heading -->
+    <div class="mb-6">
+      <h1
+        id="payment-history-heading"
+        class="font-serif-display text-3xl sm:text-4xl font-bold text-navy tracking-tight"
+      >
+        Payment history
+      </h1>
+      <p class="mt-1.5 text-sm sm:text-base text-ink-secondary">
+        Review your payments and download receipts.
+      </p>
+    </div>
+
+    <!-- Segmented Status Filter Tabs -->
+    <div
+      role="tablist"
+      aria-label="Filter payments by status"
+      class="mb-5 flex flex-wrap items-center gap-2"
+    >
+      @for (tab of filterTabs; track tab.label) {
+        <button
+          type="button"
+          role="tab"
+          data-testid="status-filter-tab"
+          [attr.data-filter-value]="tab.value"
+          [attr.aria-selected]="selectedStatus() === tab.value"
+          (click)="selectStatusFilter(tab.value)"
+          class="rounded-full border px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          [class]="
+            selectedStatus() === tab.value
+              ? 'border-terracotta bg-terracotta text-white'
+              : 'border-line bg-surface text-ink hover:bg-cream-100'
+          "
+        >
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+
+    <!-- Main Card Area -->
+    <div class="bg-surface border border-line rounded-2xl shadow-xs overflow-hidden" aria-live="polite">
+      @if (loading()) {
+        <!-- Loading Skeleton Rows -->
+        <div class="p-6 space-y-4" data-testid="payments-loading">
+          @for (row of skeletonRows; track row) {
+            <div class="flex items-center justify-between gap-4 py-3 border-b border-line last:border-b-0 animate-pulse motion-reduce:animate-none">
+              <div class="space-y-2 flex-1">
+                <div class="h-4 w-32 rounded bg-cream-100"></div>
+                <div class="h-3 w-48 rounded bg-cream-100"></div>
+              </div>
+              <div class="h-6 w-20 rounded-full bg-cream-100"></div>
+              <div class="h-8 w-24 rounded-lg bg-cream-100"></div>
+            </div>
+          }
+        </div>
+      } @else if (errorMessage(); as errMsg) {
+        <!-- Error State -->
+        <div
+          role="alert"
+          data-testid="payments-error"
+          class="p-8 sm:p-10 text-center"
+        >
+          <p class="font-serif-display text-xl font-bold text-navy">
+            {{ errMsg }}
+          </p>
+          <div class="mt-5">
+            <button
+              type="button"
+              data-testid="payments-retry-btn"
+              (click)="loadPayments()"
+              class="inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-2.5 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      } @else if (payments().length === 0) {
+        <!-- Empty State -->
+        <div class="p-10 sm:p-12 text-center" data-testid="payments-empty">
+          <h2 class="font-serif-display text-2xl font-bold text-navy">
+            No payments yet
+          </h2>
+          <p class="mt-2 text-sm text-ink-secondary">
+            When you place an order on CraftBridge, your payment records and receipts will appear here.
+          </p>
+          <div class="mt-6">
+            <a
+              routerLink="/"
+              class="inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              Back to shop
+            </a>
+          </div>
+        </div>
+      } @else {
+        <!-- Desktop Accessible Table (>= 768px) -->
+        <div class="hidden md:block overflow-x-auto">
+          <table class="w-full text-left border-collapse" data-testid="payments-table">
+            <caption class="sr-only">
+              Your CraftBridge payment history and receipt links
+            </caption>
+            <thead>
+              <tr class="border-b border-line bg-cream-50/70 text-xs uppercase tracking-wider text-ink-secondary">
+                <th scope="col" class="py-3.5 px-5 font-semibold">Order</th>
+                <th scope="col" class="py-3.5 px-4 font-semibold">Date</th>
+                <th scope="col" class="py-3.5 px-4 font-semibold">Method</th>
+                <th scope="col" class="py-3.5 px-4 font-semibold">Amount</th>
+                <th scope="col" class="py-3.5 px-4 font-semibold">Status</th>
+                <th scope="col" class="py-3.5 px-5 font-semibold text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-line text-sm">
+              @for (item of payments(); track item.id) {
+                <tr data-testid="payment-table-row" class="hover:bg-cream-50/50 transition-colors">
+                  <td class="py-4 px-5 font-semibold text-navy">
+                    #{{ item.order_number || item.order_id }}
+                  </td>
+                  <td class="py-4 px-4 text-ink-secondary">
+                    {{ item.created_at | date: 'MMM d, y' }}
+                  </td>
+                  <td class="py-4 px-4 text-ink">
+                    {{ formatMethod(item.provider) }}
+                  </td>
+                  <td class="py-4 px-4 font-semibold text-navy">
+                    {{ item.amount_cents | money: item.currency }}
+                  </td>
+                  <td class="py-4 px-4">
+                    <app-payment-status-chip [status]="item.status" />
+                  </td>
+                  <td class="py-4 px-5 text-right">
+                    <div class="inline-flex items-center justify-end gap-2">
+                      @if (item.status === 'SUCCESS') {
+                        <a
+                          [routerLink]="['/payments/receipt', item.order_id]"
+                          data-testid="action-view-receipt"
+                          class="inline-flex items-center justify-center rounded-lg bg-terracotta hover:bg-terracotta-700 text-white text-xs font-semibold px-3.5 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                        >
+                          View receipt
+                        </a>
+                      } @else if (item.status === 'PENDING') {
+                        <a
+                          routerLink="/payments/result"
+                          [queryParams]="{ attempt: item.id }"
+                          data-testid="action-check-status"
+                          class="inline-flex items-center justify-center rounded-lg border border-navy text-navy hover:bg-cream-100 text-xs font-semibold px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                        >
+                          Check status
+                        </a>
+                        <a
+                          [routerLink]="['/payments/redirect', item.order_id]"
+                          data-testid="action-pay-now"
+                          class="inline-flex items-center justify-center rounded-lg bg-terracotta hover:bg-terracotta-700 text-white text-xs font-semibold px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                        >
+                          Pay now
+                        </a>
+                      } @else {
+                        <a
+                          [routerLink]="['/payments/redirect', item.order_id]"
+                          data-testid="action-try-again"
+                          class="inline-flex items-center justify-center rounded-lg bg-terracotta hover:bg-terracotta-700 text-white text-xs font-semibold px-3.5 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                        >
+                          Try again
+                        </a>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Mobile Stacked Cards (< 768px) -->
+        <div class="md:hidden divide-y divide-line" data-testid="payments-mobile-list">
+          @for (item of payments(); track item.id) {
+            <article class="p-4 space-y-3" data-testid="payment-mobile-card">
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <div class="font-semibold text-navy text-sm">
+                    #{{ item.order_number || item.order_id }}
+                  </div>
+                  <div class="text-xs text-ink-secondary">
+                    {{ item.created_at | date: 'MMM d, y' }} • {{ formatMethod(item.provider) }}
+                  </div>
+                </div>
+                <app-payment-status-chip [status]="item.status" />
+              </div>
+
+              <div class="flex items-center justify-between pt-1">
+                <span class="font-serif-display text-base font-bold text-navy">
+                  {{ item.amount_cents | money: item.currency }}
+                </span>
+
+                <div class="flex items-center gap-2">
+                  @if (item.status === 'SUCCESS') {
+                    <a
+                      [routerLink]="['/payments/receipt', item.order_id]"
+                      class="inline-flex items-center justify-center rounded-lg bg-terracotta hover:bg-terracotta-700 text-white text-xs font-semibold px-3 py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      View receipt
+                    </a>
+                  } @else if (item.status === 'PENDING') {
+                    <a
+                      routerLink="/payments/result"
+                      [queryParams]="{ attempt: item.id }"
+                      class="inline-flex items-center justify-center rounded-lg border border-navy text-navy hover:bg-cream-100 text-xs font-semibold px-2.5 py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      Check status
+                    </a>
+                    <a
+                      [routerLink]="['/payments/redirect', item.order_id]"
+                      class="inline-flex items-center justify-center rounded-lg bg-terracotta hover:bg-terracotta-700 text-white text-xs font-semibold px-2.5 py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      Pay now
+                    </a>
+                  } @else {
+                    <a
+                      [routerLink]="['/payments/redirect', item.order_id]"
+                      class="inline-flex items-center justify-center rounded-lg bg-terracotta hover:bg-terracotta-700 text-white text-xs font-semibold px-3 py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      Try again
+                    </a>
+                  }
+                </div>
+              </div>
+            </article>
+          }
+        </div>
+
+        <!-- Pagination Footer -->
+        <div
+          class="border-t border-line bg-cream-50/50 px-5 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm"
+          data-testid="payments-pagination"
+        >
+          <span class="text-ink-secondary">
+            Showing {{ rangeStart() }}-{{ rangeEnd() }} of {{ total() }}
+          </span>
+
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="pagination-prev"
+              aria-label="Previous page"
+              [disabled]="!hasPrevious()"
+              (click)="goToPage(page() - 1)"
+              class="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3.5 py-1.5 font-semibold text-ink hover:bg-cream-100 disabled:opacity-45 disabled:pointer-events-none transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              data-testid="pagination-next"
+              aria-label="Next page"
+              [disabled]="!hasNext()"
+              (click)="goToPage(page() + 1)"
+              class="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3.5 py-1.5 font-semibold text-ink hover:bg-cream-100 disabled:opacity-45 disabled:pointer-events-none transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+</app-account-shell>
