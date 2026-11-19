@@ -16,8 +16,20 @@ export const PAYMENTS_ROUTES: Routes = [
       ),
   },
   {
+    path: 'history',
+    loadComponent: () =>
+      import('./payment-history/payment-history.component').then(
+        (m) => m.PaymentHistoryComponent,
+      ),
+  },
+  {
+    path: 'receipt/:orderId',
+    loadComponent: () =>
+      import('./receipt/receipt.component').then((m) => m.ReceiptComponent),
+  },
+  {
     path: '',
-    redirectTo: 'result',
+    redirectTo: 'history',
     pathMatch: 'full',
   },
 ];

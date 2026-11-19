@@ -1,0 +1,190 @@
+<ng-template #navIcon let-icon>
+  <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+    @switch (icon) {
+      @case ('box') {
+        <path stroke-linecap="round" stroke-linejoin="round" d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Zm0 9 8-4.5M12 12v9m0-9L4 7.5" />
+      }
+      @case ('card') {
+        <rect x="3" y="6" width="18" height="12" rx="2" />
+        <path stroke-linecap="round" d="M3 10h18M7 15h3" />
+      }
+      @case ('refresh') {
+        <path stroke-linecap="round" stroke-linejoin="round" d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" />
+      }
+      @case ('pin') {
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" />
+        <circle cx="12" cy="10" r="2.3" />
+      }
+      @case ('bell') {
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Zm4 4h4" />
+      }
+      @default {
+        <circle cx="12" cy="8" r="4" />
+        <path stroke-linecap="round" d="M4 20c1.8-3.5 5-5 8-5s6.2 1.5 8 5" />
+      }
+    }
+  </svg>
+</ng-template>
+
+<div class="min-h-screen flex flex-col bg-cream text-ink font-sans print:bg-white print:min-h-0">
+  <!-- Navy top bar (mockup-15) -->
+  <header class="bg-navy text-white print:hidden" data-testid="account-topbar">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center gap-4 justify-between">
+      <a
+        href="/"
+        class="inline-flex items-center gap-2.5 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        aria-label="CraftBridge Home"
+      >
+        <svg class="w-8 h-8 text-terracotta-100" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
+          <path d="M16 26c-1-6 0-12 5-17 1 6-1 12-5 17Z" opacity="0.95" />
+          <path d="M16 26c1-6 0-12-5-17-1 6 1 12 5 17Z" opacity="0.75" />
+          <path d="M16 26c-4-3-9-4-13-2 3 3 8 4 13 2Zm0 0c4-3 9-4 13-2-3 3-8 4-13 2Z" opacity="0.6" />
+        </svg>
+        <span class="flex flex-col leading-none">
+          <span class="font-serif-display text-2xl font-bold tracking-tight text-white">CraftBridge</span>
+          <span class="mt-1 text-[9px] tracking-[0.2em] uppercase text-white/75">Global Handmade Marketplace</span>
+        </span>
+      </a>
+
+      <label class="order-3 lg:order-2 w-full lg:w-auto lg:flex-1 lg:max-w-md relative">
+        <span class="sr-only">Search for handmade crafts, artisans, or destinations</span>
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path stroke-linecap="round" d="m20 20-3.5-3.5" />
+        </svg>
+        <input
+          type="search"
+          placeholder="Search for handmade crafts, artisans, or destinations..."
+          class="w-full rounded-lg bg-white text-ink text-sm pl-9 pr-3 py-2 placeholder:text-ink-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        />
+      </label>
+
+      <nav aria-label="Primary" class="order-2 lg:order-3 flex items-center gap-4 sm:gap-6 text-sm font-medium">
+        <a href="/" class="hidden sm:inline hover:text-terracotta-100 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">Shop</a>
+        <a href="/" class="hidden sm:inline hover:text-terracotta-100 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">Artisans</a>
+        <a href="/" class="hidden md:inline hover:text-terracotta-100 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">Our Story</a>
+        <span class="hidden sm:block h-6 w-px bg-white/25" aria-hidden="true"></span>
+        <a href="/" aria-label="Wishlist" class="rounded p-1 hover:text-terracotta-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 20.5s-7-4.35-9.1-8.4C1.3 8.9 3.2 5 6.8 5c2.1 0 3.7 1.1 5.2 2.8C13.5 6.1 15.1 5 17.2 5c3.6 0 5.5 3.9 3.9 7.1-2.1 4.05-9.1 8.4-9.1 8.4Z" />
+          </svg>
+        </a>
+        <a href="/" aria-label="Cart" class="rounded p-1 hover:text-terracotta-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h2l2.2 11h10.6L20 7H6.2M9 20h.01M17 20h.01" />
+          </svg>
+        </a>
+        <a href="/payments/history" class="inline-flex items-center gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+          <span class="inline-flex w-8 h-8 items-center justify-center rounded-full bg-terracotta-100 text-navy text-xs font-bold" aria-hidden="true">{{ initials() }}</span>
+          <span class="hidden sm:inline">My Account</span>
+          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
+          </svg>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 flex flex-col lg:flex-row gap-6 print:p-0 print:block">
+    <!-- Mobile: horizontally scrollable pill row (<1024px) -->
+    <nav aria-label="Account" class="lg:hidden -mx-4 px-4 overflow-x-auto print:hidden" data-testid="account-nav-mobile">
+      <ul class="flex gap-2 w-max pb-1">
+        @for (item of navItems; track item.id) {
+          <li>
+            @if (item.route) {
+              <a
+                [routerLink]="item.route"
+                [attr.aria-current]="isActive(item.id) ? 'page' : null"
+                class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                [class]="isActive(item.id) ? 'border-terracotta bg-terracotta-100 text-terracotta-700' : 'border-line bg-surface text-ink hover:bg-cream-100'"
+              >{{ item.label }}</a>
+            } @else {
+              <a
+                href="#"
+                class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm font-medium text-ink hover:bg-cream-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >{{ item.label }}</a>
+            }
+          </li>
+        }
+      </ul>
+    </nav>
+
+    <!-- Desktop: left account sidebar card -->
+    <aside class="hidden lg:block w-60 shrink-0 print:hidden" data-testid="account-sidebar">
+      <div class="bg-surface border border-line rounded-2xl p-4 shadow-xs">
+        <div class="flex items-center gap-3 px-1 pb-4 border-b border-line">
+          <span class="inline-flex w-11 h-11 shrink-0 items-center justify-center rounded-full bg-cream-100 text-navy font-bold" aria-hidden="true">{{ initials() }}</span>
+          <div class="min-w-0">
+            <div class="text-sm font-semibold text-ink truncate" data-testid="account-user-name">{{ userName }}</div>
+            <div class="text-xs text-ink-secondary truncate" data-testid="account-user-email">{{ userEmail }}</div>
+          </div>
+        </div>
+
+        <nav aria-label="Account" class="pt-3">
+          <ul class="space-y-1">
+            @for (item of navItems; track item.id) {
+              <li>
+                @if (item.route) {
+                  <a
+                    [routerLink]="item.route"
+                    data-testid="account-nav-item"
+                    [attr.data-nav-id]="item.id"
+                    [attr.aria-current]="isActive(item.id) ? 'page' : null"
+                    class="flex items-center gap-3 rounded-lg border-l-2 px-3 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    [class]="isActive(item.id) ? 'border-terracotta bg-terracotta-100 text-terracotta-700' : 'border-transparent text-ink hover:bg-cream-100'"
+                  >
+                    <ng-container *ngTemplateOutlet="navIcon; context: { $implicit: item.icon }" />
+                    <span>{{ item.label }}</span>
+                  </a>
+                } @else {
+                  <a
+                    href="#"
+                    data-testid="account-nav-item"
+                    [attr.data-nav-id]="item.id"
+                    class="flex items-center gap-3 rounded-lg border-l-2 border-transparent px-3 py-2.5 text-sm font-medium text-ink hover:bg-cream-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
+                    <ng-container *ngTemplateOutlet="navIcon; context: { $implicit: item.icon }" />
+                    <span>{{ item.label }}</span>
+                  </a>
+                }
+              </li>
+            }
+          </ul>
+
+          <div class="my-3 border-t border-line" role="separator"></div>
+
+          <!-- TODO(member-01): Wire Sign Out to the real auth service. -->
+          <button
+            type="button"
+            class="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-ink hover:bg-cream-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 5H5v14h5m4-11 4 4-4 4m4-4H9" />
+            </svg>
+            <span>Sign Out</span>
+          </button>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- Content area -->
+    <main class="flex-1 min-w-0">
+      @if (showShippingInfo()) {
+        <div class="mb-5 flex lg:justify-end print:hidden" data-testid="shipping-info-card">
+          <div class="flex items-start gap-3 rounded-xl border border-line bg-cream-100 px-4 py-3 w-full lg:w-auto lg:max-w-sm">
+            <svg class="w-7 h-7 text-navy shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 7h11v9H3V7Zm11 3h3.5l2.5 3v3H14v-6Z" />
+              <circle cx="7.5" cy="18" r="1.75" />
+              <circle cx="17.5" cy="18" r="1.75" />
+            </svg>
+            <div>
+              <div class="text-sm font-semibold text-ink">U.S.-only shipping</div>
+              <div class="text-xs text-ink-secondary">We currently ship to addresses in the United States.</div>
+            </div>
+          </div>
+        </div>
+      }
+      <ng-content />
+    </main>
+  </div>
+</div>

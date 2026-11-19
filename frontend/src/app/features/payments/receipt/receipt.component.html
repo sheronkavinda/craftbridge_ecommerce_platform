@@ -1,0 +1,234 @@
+<app-account-shell activeItem="payments">
+  <section class="max-w-[720px] mx-auto" aria-live="polite">
+    <!-- Top Controls Bar (hidden when printing) -->
+    <div class="no-print print:hidden mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <a
+        routerLink="/payments/history"
+        data-testid="back-to-history-link"
+        class="inline-flex items-center gap-1.5 text-sm font-semibold text-navy hover:text-terracotta transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6" />
+        </svg>
+        <span>Back to payment history</span>
+      </a>
+
+      @if (receipt()) {
+        <div class="flex items-center gap-2.5">
+          <button
+            type="button"
+            data-testid="download-receipt-btn"
+            [disabled]="downloading()"
+            (click)="onDownloadReceipt()"
+            class="inline-flex items-center justify-center gap-2 rounded-xl bg-terracotta hover:bg-terracotta-700 disabled:opacity-60 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0-4-4m4 4 4-4M4 19h16" />
+            </svg>
+            <span>{{ downloading() ? 'Downloading...' : 'Download receipt' }}</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="print-receipt-btn"
+            (click)="onPrintReceipt()"
+            class="inline-flex items-center justify-center gap-2 rounded-xl border border-navy text-navy hover:bg-cream-100 font-semibold text-xs sm:text-sm px-4 py-2.5 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 9V4h12v5M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v6H6v-6Z" />
+            </svg>
+            <span>Print</span>
+          </button>
+        </div>
+      }
+    </div>
+
+    @if (downloadError(); as dlErr) {
+      <div
+        role="alert"
+        data-testid="download-error-alert"
+        class="no-print print:hidden mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-xs sm:text-sm text-red-900"
+      >
+        {{ dlErr }}
+      </div>
+    }
+
+    @if (loading()) {
+      <div class="bg-surface border border-line rounded-2xl p-8 sm:p-10 shadow-xs space-y-5 animate-pulse motion-reduce:animate-none">
+        <div class="flex justify-between">
+          <div class="h-7 w-40 rounded bg-cream-100"></div>
+          <div class="h-6 w-32 rounded bg-cream-100"></div>
+        </div>
+        <div class="h-24 w-full rounded bg-cream-100"></div>
+        <div class="h-24 w-full rounded bg-cream-100"></div>
+      </div>
+    } @else if (errorMessage(); as errMsg) {
+      <div
+        role="alert"
+        data-testid="receipt-error-alert"
+        class="bg-surface border border-line rounded-2xl p-8 sm:p-10 shadow-xs text-center"
+      >
+        <h1 class="font-serif-display text-2xl sm:text-3xl font-bold text-navy">
+          {{ errMsg }}
+        </h1>
+
+        <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+          @if (errorStatus() === 409) {
+            <a
+              routerLink="/payments/result"
+              [queryParams]="{ order_id: orderId() }"
+              data-testid="receipt-check-payment-link"
+              class="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              Check payment status
+            </a>
+          } @else if (errorStatus() !== 404) {
+            <button
+              type="button"
+              data-testid="receipt-retry-btn"
+              (click)="loadReceipt()"
+              class="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-terracotta hover:bg-terracotta-700 text-white font-semibold text-sm px-6 py-3 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              Retry
+            </button>
+          }
+
+          <a
+            routerLink="/payments/history"
+            class="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-navy text-navy hover:bg-cream-100 font-semibold text-sm px-6 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            Back to payment history
+          </a>
+        </div>
+      </div>
+    } @else if (receipt(); as r) {
+      <!-- Printable White Receipt Card -->
+      <article
+        data-testid="receipt-card"
+        class="receipt-printable-card bg-surface border border-line rounded-2xl p-6 sm:p-10 shadow-xs"
+      >
+        <!-- Header Row -->
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-6 border-b border-line">
+          <div>
+            <div class="font-serif-display text-2xl sm:text-3xl font-bold tracking-tight leading-none">
+              <span class="text-navy">Craft</span><span class="text-terracotta">Bridge</span>
+            </div>
+            <h1 class="mt-1.5 text-sm font-semibold text-ink-secondary">
+              Official Payment Receipt
+            </h1>
+          </div>
+
+          <div class="sm:text-right space-y-1.5">
+            <div class="font-mono text-sm sm:text-base font-bold text-navy" data-testid="receipt-number">
+              {{ r.receipt_number }}
+            </div>
+            <div>
+              <app-payment-status-chip status="SUCCESS" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Billed To & Order/Payment Details -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 py-6 border-b border-line text-sm">
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wider text-ink-secondary mb-1.5">
+              Billed to
+            </div>
+            <div class="font-semibold text-navy" data-testid="receipt-buyer-name">
+              {{ r.buyer_name }}
+            </div>
+            <div class="text-ink-secondary" data-testid="receipt-buyer-email">
+              {{ r.buyer_email }}
+            </div>
+          </div>
+
+          <div class="sm:text-right space-y-1">
+            <div class="text-xs font-semibold uppercase tracking-wider text-ink-secondary mb-1.5">
+              Order &amp; payment details
+            </div>
+            <div>
+              <span class="text-ink-secondary">Order:</span>
+              <strong class="ml-1 font-semibold text-navy">#{{ r.order_number || r.order_id }}</strong>
+            </div>
+            <div>
+              <span class="text-ink-secondary">Issued:</span>
+              <span class="ml-1 text-ink">{{ r.issued_at | date: 'MMM d, y, h:mm a' }}</span>
+            </div>
+            <div>
+              <span class="text-ink-secondary">Method:</span>
+              <span class="ml-1 text-ink">{{ r.payment_method }}</span>
+            </div>
+            <div>
+              <span class="text-ink-secondary">Reference:</span>
+              <span class="ml-1 font-mono text-xs text-ink">{{ r.provider_reference }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Line Items Table (only rendered when items.length > 0) -->
+        @if (r.items && r.items.length > 0) {
+          <div class="py-6 border-b border-line overflow-x-auto" data-testid="receipt-items-section">
+            <table class="w-full text-left border-collapse text-sm" data-testid="receipt-items-table">
+              <caption class="sr-only">
+                Order items included in this receipt
+              </caption>
+              <thead>
+                <tr class="border-b border-line text-xs uppercase tracking-wider text-ink-secondary">
+                  <th scope="col" class="pb-2.5 font-semibold">Item</th>
+                  <th scope="col" class="pb-2.5 px-3 font-semibold text-right">Qty</th>
+                  <th scope="col" class="pb-2.5 px-3 font-semibold text-right">Unit price</th>
+                  <th scope="col" class="pb-2.5 font-semibold text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line">
+                @for (item of r.items; track item.title) {
+                  <tr>
+                    <td class="py-3 font-medium text-ink">{{ item.title }}</td>
+                    <td class="py-3 px-3 text-right text-ink-secondary">{{ item.quantity }}</td>
+                    <td class="py-3 px-3 text-right text-ink">
+                      {{ item.unit_price_cents | money: r.currency }}
+                    </td>
+                    <td class="py-3 text-right font-semibold text-navy">
+                      {{ itemLineTotalCents(item) | money: r.currency }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+
+        <!-- Totals Breakdown -->
+        <div class="pt-6 space-y-2.5 text-sm">
+          <div class="flex items-center justify-between text-ink" data-testid="receipt-gross-row">
+            <span>Gross paid</span>
+            <span class="font-medium">{{ r.amount_cents | money: r.currency }}</span>
+          </div>
+
+          @if (r.refunded_cents > 0) {
+            <div
+              class="flex items-center justify-between text-ink-secondary"
+              data-testid="receipt-refunded-row"
+            >
+              <span>Refunded</span>
+              <span class="font-medium">{{ -r.refunded_cents | money: r.currency }}</span>
+            </div>
+          }
+
+          <div
+            class="pt-3 border-t border-navy/20 flex items-center justify-between text-base sm:text-lg font-bold text-navy"
+            data-testid="receipt-net-row"
+          >
+            <span>Net paid</span>
+            <span class="font-serif-display">{{ r.net_paid_cents | money: r.currency }}</span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-8 pt-6 border-t border-line text-center text-xs text-ink-secondary">
+          Thank you for supporting independent artisans on CraftBridge.
+        </div>
+      </article>
+    }
+  </section>
+</app-account-shell>

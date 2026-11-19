@@ -39,6 +39,38 @@ export interface PaginatedPayments {
   meta: PaginationMeta;
 }
 
+export interface ReceiptItem {
+  title: string;
+  quantity: number;
+  unit_price_cents: number;
+  unit_price?: string;
+  line_total_cents?: number;
+  line_total?: string;
+}
+
+export interface ReceiptView {
+  receipt_number: string;
+  issued_at: string;
+  order_id: string;
+  order_number: string;
+  buyer_name: string;
+  buyer_email: string;
+  payment_method: string;
+  provider_reference: string;
+  amount_cents: number;
+  amount: string;
+  currency: string;
+  items: ReceiptItem[];
+  refunded_cents: number;
+  net_paid_cents: number;
+  status: string;
+}
+
+export interface DownloadedReceipt {
+  blob: Blob;
+  filename: string;
+}
+
 export interface ApiEnvelope<T> {
   data: T;
 }

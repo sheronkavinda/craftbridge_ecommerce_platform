@@ -3,7 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { environment } from '../../../environments/environment';
 import { PaymentsApiError, PaymentsApiService } from './payments-api.service';
-import { BuyerPayment, InitiatePaymentResponse } from './payments.models';
+import { BuyerPayment, DownloadedReceipt, InitiatePaymentResponse, ReceiptView } from './payments.models';
 
 describe('PaymentsApiService', () => {
   let service: PaymentsApiService;
@@ -97,19 +97,71 @@ describe('PaymentsApiService', () => {
     });
   });
 
+  it('getReceipt fetches /me/orders/:id/receipt and unwraps the data envelope', () => {
+    const mockReceipt: ReceiptView = {
+      receipt_number: 'RCP-20261115-A1B2C3',
+      issued_at: '2026-11-15T10:00:00Z',
+      order_id: 'order-001',
+      order_number: 'CB-1001',
+      buyer_name: 'Ruwan Fernando',
+      buyer_email: 'ruwan@craftbridge.test',
+      payment_method: 'PayHere Sandbox',
+      provider_reference: 'ph-001',
+      amount_cents: 200000,
+      amount: '2000.00',
+      currency: 'USD',
+      items: [],
+      refunded_cents: 0,
+      net_paid_cents: 200000,
+      status: 'PAID',
+    };
+
+    let actual: ReceiptView | undefined;
+    service.getReceipt('order-001').subscribe((res) => (actual = res));
+
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/me/orders/order-001/receipt`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ data: mockReceipt });
+
+    expect(actual).toEqual(mockReceipt);
+  });
+
+  it('downloadReceipt fetches the HTML blob and builds filename receipt-<receipt_number>.html on the client', () => {
+    const htmlBlob = new Blob(['<html>Receipt</html>'], { type: 'text/html' });
+    let result: DownloadedReceipt | undefined;
+
+    service.downloadReceipt('order-001', 'RCP-20261115-A1B2C3').subscribe((res) => {
+      result = res;
+    });
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/me/orders/order-001/receipt/download`,
+    );
+    expect(req.request.method).toBe('GET');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(htmlBlob);
+
+    expect(result).toBeDefined();
+    expect(result!.filename).toBe('receipt-RCP-20261115-A1B2C3.html');
+    expect(result!.blob.size).toBe(htmlBlob.size);
+  });
+
   it('maps backend {"error": "..."} responses to PaymentsApiError with status and message', () => {
     let capturedErr: unknown;
-    service.initiatePayment('order-missing').subscribe({
+    service.getReceipt('order-unpaid').subscribe({
       next: () => fail('expected error'),
       error: (err) => (capturedErr = err),
     });
 
-    const req = httpMock.expectOne(`${environment.apiBaseUrl}/orders/order-missing/payments`);
-    req.flush({ error: 'order not found' }, { status: 404, statusText: 'Not Found' });
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/me/orders/order-unpaid/receipt`);
+    req.flush(
+      { error: 'no verified payment for this order' },
+      { status: 409, statusText: 'Conflict' },
+    );
 
     expect(capturedErr instanceof PaymentsApiError).toBeTrue();
     const apiErr = capturedErr as PaymentsApiError;
-    expect(apiErr.status).toBe(404);
-    expect(apiErr.message).toBe('order not found');
+    expect(apiErr.status).toBe(409);
+    expect(apiErr.message).toBe('no verified payment for this order');
   });
 });
