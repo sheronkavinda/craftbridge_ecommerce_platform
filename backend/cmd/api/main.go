@@ -13,6 +13,7 @@ import (
 	"craftbridge/backend/internal/modules/admin"
 	"craftbridge/backend/internal/modules/audit"
 	"craftbridge/backend/internal/modules/catalog"
+	"craftbridge/backend/internal/modules/m04"
 	"craftbridge/backend/internal/modules/payment"
 	"craftbridge/backend/internal/modules/receipt"
 	"craftbridge/backend/internal/modules/refund"
@@ -259,7 +260,8 @@ func main() {
 	sellerHandler := seller.NewHandler(seller.NewService(sellerRepo))
 
 	catalogRepo := catalog.NewRepository(dbPool)
-	catalogHandler := catalog.NewHandler(catalog.NewService(catalogRepo))
+	catalogService := catalog.NewService(catalogRepo)
+	catalogHandler := catalog.NewHandler(catalogService)
 
 	const catalogUploadDir = "uploads/catalog"
 	imageStore, err := catalog.NewLocalImageStore(catalogUploadDir)
@@ -308,6 +310,10 @@ func main() {
 			admin.RegisterRoutes(v1, adminHandler)
 
 			authenticate := platformhttp.RequireAuthenticatedUser()
+			if _, err := m04.Register(ctx, v1, dbPool, authenticate, catalogService); err != nil {
+				log.Fatalf("register cart, checkout and shipping routes: %v", err)
+			}
+
 			seller.RegisterRoutes(v1, sellerHandler, authenticate)
 			seller.RegisterShopMediaRoutes(v1, shopMediaHandler, authenticate)
 			seller.RegisterAdminRoutes(v1, sellerHandler, authenticate, platformhttp.RequireAdminRole())
