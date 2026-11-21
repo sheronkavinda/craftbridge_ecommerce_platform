@@ -12,6 +12,7 @@ func RegisterRoutes(
 		panic("seller routes require authentication")
 	}
 
+	api.GET("/shops/:slug", handler.GetPublicShop)
 	sellerRoutes := api.Group("/seller")
 	sellerRoutes.Use(authenticate)
 
