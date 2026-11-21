@@ -1,4 +1,3 @@
-
 <app-header></app-header>
 
 <main class="min-h-screen bg-[#faf8f5] text-[#18314c]">
@@ -11,7 +10,7 @@
         <h2 class="text-lg font-bold">Filters</h2>
         <button
           type="button"
-          class="text-xs text-[#b84f30] underline"
+          class="cursor-pointer text-xs text-[#b84f30] underline"
           (click)="clearFilters()"
         >
           Clear all
@@ -27,12 +26,13 @@
             type="checkbox"
             class="size-4 accent-[#b94e2d]"
             [checked]="selectedCategories().length === 0"
-            (change)="selectedCategories.set([])"
+            [disabled]="selectedCategories().length === 0"
+            (change)="selectedCategories.set([]); currentPage.set(1)"
           />
           All Categories
         </label>
 
-        @for (category of categories; track category.value) {
+        @for (category of categories(); track category.value) {
           <label class="mb-3 flex cursor-pointer items-center gap-2 text-xs">
             <input
               type="checkbox"
@@ -45,66 +45,50 @@
         }
       </section>
 
-
-<!-- PRICE RANGE -->
-<section class="border-t border-[#e5ded5] py-5">
-  <h3 class="mb-4 text-sm font-bold">Price Range</h3>
-
-  <div class="mb-4">
-    <input
-      type="range"
-      min="0"
-      max="200"
-      step="5"
-      [ngModel]="maxPrice() ?? 200"
-      (ngModelChange)="onMaxPriceChange($event.toString())"
-      aria-label="Maximum price"
-      class="w-full cursor-pointer accent-[#b94e2d]"
-    />
-  </div>
-
-  <div class="flex items-end gap-2">
-    <label class="min-w-0 flex-1">
-      <span class="mb-2 block text-xs text-slate-500">Min</span>
-      <input
-        type="number"
-        min="0"
-        placeholder="0"
-        [ngModel]="minPrice()"
-        (ngModelChange)="onMinPriceChange($event == null ? '' : $event.toString())"
-        class="w-full rounded-md border border-[#dedbd6] bg-white p-2 text-xs"
-      />
-    </label>
-
-    <span class="pb-2 text-slate-500">–</span>
-
-    <label class="min-w-0 flex-1">
-      <span class="mb-2 block text-xs text-slate-500">Max</span>
-      <input
-        type="number"
-        min="0"
-        placeholder="200+"
-        [ngModel]="maxPrice()"
-        (ngModelChange)="onMaxPriceChange($event == null ? '' : $event.toString())"
-        class="w-full rounded-md border border-[#dedbd6] bg-white p-2 text-xs"
-      />
-    </label>
-  </div>
-</section>
-
-      <!-- SELLER COUNTRY -->
+      <!-- PRICE RANGE -->
       <section class="border-t border-[#e5ded5] py-5">
-        <h3 class="mb-4 text-sm font-bold">Seller Country</h3>
+        <h3 class="mb-4 text-sm font-bold">Price Range</h3>
 
-        <label class="flex cursor-pointer items-center gap-2 text-xs">
+        <div class="mb-4">
           <input
-            type="checkbox"
-            class="size-4 accent-[#b94e2d]"
-            [checked]="selectedCountry() === 'Sri Lanka'"
-            (change)="onCountryChange(selectedCountry() === 'Sri Lanka' ? '' : 'Sri Lanka')"
+            type="range"
+            min="0"
+            max="200"
+            step="5"
+            [ngModel]="maxPrice() ?? 200"
+            (ngModelChange)="onMaxPriceChange($event.toString())"
+            aria-label="Maximum price"
+            class="w-full cursor-pointer accent-[#b94e2d]"
           />
-          Sri Lanka
-        </label>
+        </div>
+
+        <div class="flex items-end gap-2">
+          <label class="min-w-0 flex-1">
+            <span class="mb-2 block text-xs text-slate-500">Min</span>
+            <input
+              type="number"
+              min="0"
+              placeholder="0"
+              [ngModel]="minPrice()"
+              (ngModelChange)="onMinPriceChange($event == null ? '' : $event.toString())"
+              class="w-full rounded-md border border-[#dedbd6] bg-white p-2 text-xs"
+            />
+          </label>
+
+          <span class="pb-2 text-slate-500">–</span>
+
+          <label class="min-w-0 flex-1">
+            <span class="mb-2 block text-xs text-slate-500">Max</span>
+            <input
+              type="number"
+              min="0"
+              placeholder="200+"
+              [ngModel]="maxPrice()"
+              (ngModelChange)="onMaxPriceChange($event == null ? '' : $event.toString())"
+              class="w-full rounded-md border border-[#dedbd6] bg-white p-2 text-xs"
+            />
+          </label>
+        </div>
       </section>
 
       <!-- AVAILABILITY -->
@@ -120,50 +104,6 @@
           />
           In stock
         </label>
-
-        <label class="flex cursor-pointer items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            class="size-4 accent-[#b94e2d]"
-            [checked]="selectedAvailability() === 'made-to-order'"
-            (change)="onAvailabilityChange(selectedAvailability() === 'made-to-order' ? '' : 'made-to-order')"
-          />
-          Made to order
-        </label>
-      </section>
-
-      <!-- CUSTOMER RATING -->
-      <section class="border-t border-[#e5ded5] py-5">
-        <h3 class="mb-4 text-sm font-bold">Customer Rating</h3>
-
-        @for (rating of [4, 3, 2, 1]; track rating) {
-          <label class="mb-3 flex cursor-pointer items-center gap-2 text-xs">
-            <input
-              type="radio"
-              name="minimumRating"
-              class="size-4 accent-[#b94e2d]"
-              [checked]="minimumRating() === rating"
-              (change)="onRatingChange(rating)"
-            />
-
-            <span class="flex text-base">
-              @for (star of [1, 2, 3, 4, 5]; track star) {
-                <span [class.text-amber-500]="star <= rating"
-                      [class.text-gray-300]="star > rating">★</span>
-              }
-            </span>
-
-            <span>&amp; up</span>
-          </label>
-        }
-
-        <button
-          type="button"
-          class="text-xs text-[#b84f30] underline"
-          (click)="onRatingChange(null)"
-        >
-          Clear rating
-        </button>
       </section>
     </aside>
 
@@ -241,7 +181,12 @@
       </div>
 
       <!-- PRODUCT GRID -->
-      @if (paginatedProducts().length > 0) {
+      @if (loading()) {
+        <p role="status">Loading products...</p>
+      } @else if (loadError()) {
+        <p role="alert">{{ loadError() }}</p>
+        <button type="button" class="underline" (click)="loadCatalog()">Try again</button>
+      } @else if (paginatedProducts().length > 0) {
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           @for (product of paginatedProducts(); track product.id) {
             <app-product-card
@@ -277,7 +222,6 @@
       <!-- PAGINATION -->
       @if (totalResults() > 0) {
         <div class="mt-8 flex flex-wrap items-center justify-center gap-5">
-
           <nav class="flex items-center gap-2" aria-label="Product pages">
             <button
               type="button"
@@ -330,7 +274,6 @@
           </label>
         </div>
       }
-
     </section>
   </div>
 </main>

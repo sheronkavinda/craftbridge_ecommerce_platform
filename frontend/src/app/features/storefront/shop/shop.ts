@@ -8,8 +8,14 @@ import {
 } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
-import { HttpErrorResponse } from '@angular/common/http';
+import { ActivatedRoute, Router } from '@angular/router';
+import { DOCUMENT } from '@angular/common';
+import { DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { EMPTY, catchError, expand, forkJoin, from, map, mergeMap, reduce, switchMap } from 'rxjs';
+import { environment } from '../../../../environments/environment';
+import { StorefrontApi, type PublicCatalogProduct, type PublicProductPage } from '../services/storefront-api';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 
 import { Header } from '../../../shared/components/header/header';
 
@@ -42,14 +48,25 @@ interface ShopProduct extends StorefrontProduct {
 })
 export class Shop implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly wishlistApi = inject(WishlistApi);
+
+  private readonly http = inject(HttpClient);
+  private readonly catalogApi = inject(StorefrontApi);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly baseUrl = environment.apiBaseUrl.replace(/\/+$/, '');
+  private readonly mediaOrigin = new URL(this.baseUrl, inject(DOCUMENT).baseURI).origin;
+
+  readonly loading = signal(true);
+  readonly loadError = signal('');
 
   // Wishlist state
   readonly wishlistLoading = signal(false);
   readonly wishlistMessage = signal('');
 
   ngOnInit(): void {
-    this.route.queryParamMap.subscribe((params) => {
+    this.loadCatalog();
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const search = params.get('search') ?? '';
       this.onSearchChange(search);
     });
@@ -72,20 +89,93 @@ export class Shop implements OnInit {
   readonly currentPage = signal(1);
   readonly pageSize = signal(8);
 
-  readonly categories = [
-    { name: 'Ceramics', value: 'ceramics' },
-    { name: 'Textiles', value: 'textiles' },
-    { name: 'Bags & Accessories', value: 'bags-accessories' },
-    { name: 'Jewelry', value: 'jewelry' },
-    { name: 'Home Decor', value: 'home-decor' },
-    { name: 'Art & Wall Decor', value: 'art-wall-decor' },
-  ];
+  readonly categories = signal<{ name: string; value: string }[]>([]);
+
+  loadCatalog(): void {
+    this.loading.set(true);
+    this.loadError.set('');
+
+    const getPage = (page: number) => this.http.get<PublicProductPage>(
+      this.baseUrl + '/products',
+      { params: { page, page_size: 50 } }
+    );
+
+    const products = getPage(1).pipe(
+      expand(page =>
+        page.items.length > 0 && page.page * page.page_size < page.total
+          ? getPage(page.page + 1)
+          : EMPTY
+      ),
+      reduce((all, page) => all.concat(page.items), [] as PublicCatalogProduct[])
+    );
+
+    const categories = this.http.get<{
+      items: { id: number; name: string; slug: string }[];
+    }>(this.baseUrl + '/categories');
+
+    forkJoin({ products, categories }).pipe(
+      switchMap(result => {
+        const categorySlugs = new Map(
+          result.categories.items.map(category => [category.id, category.slug] as const)
+        );
+
+        this.categories.set(result.categories.items.map(category => ({
+          name: category.name,
+          value: category.slug,
+        })));
+
+        this.products.set(result.products.map((item): ShopProduct => ({
+          id: String(item.id),
+          name: item.title,
+          artisanName: item.shop_name,
+          price: item.price_cents / 100,
+          currency: item.currency,
+          category: categorySlugs.get(item.category_id),
+          availability: item.available_qty > 0 ? 'in-stock' : undefined,
+          imageUrl: null,
+          rating: null,
+          reviewCount: 0,
+          isWishlisted: false,
+        })));
+
+        this.loading.set(false);
+
+        return from(result.products).pipe(
+          mergeMap(item => this.catalogApi.getProductImages(item.id).pipe(
+            map(({ items }) => {
+              const [cover] = [...items].sort(
+                (a, b) => a.sort_order - b.sort_order || a.id - b.id
+              );
+
+              return {
+                id: String(item.id),
+                url: cover ? new URL(cover.image_url, this.mediaOrigin).href : null,
+              };
+            }),
+            catchError(() => EMPTY)
+          ), 4)
+        );
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: image => {
+        if (image.url) {
+          this.products.update(products => products.map(product =>
+            product.id === image.id ? { ...product, imageUrl: image.url } : product
+          ));
+        }
+      },
+      error: () => {
+        this.loading.set(false);
+        this.loadError.set('Could not load the catalog.');
+      },
+    });
+  }
 
   readonly sortOptions = [
     { label: 'Most relevant', value: 'relevant' },
     { label: 'Price: Low to High', value: 'price-low' },
     { label: 'Price: High to Low', value: 'price-high' },
-    { label: 'Highest rated', value: 'rating' },
     { label: 'Name: A to Z', value: 'name' },
   ];
 
@@ -103,6 +193,7 @@ export class Shop implements OnInit {
       const matchesSearch =
         !search ||
         product.name.toLowerCase().includes(search) ||
+        (product.category ?? '').replace(/-/g, ' ').includes(search) ||
         product.artisanName.toLowerCase().includes(search);
 
       const matchesCategory =
@@ -376,6 +467,15 @@ export class Shop implements OnInit {
     this.selectedAvailability.set('');
     this.minimumRating.set(null);
     this.currentPage.set(1);
+
+    if (this.route.snapshot.queryParamMap.has('search')) {
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { search: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    }
   }
 
   // Wishlist Add / Remove
