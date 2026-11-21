@@ -12,10 +12,12 @@ import (
 
 	"craftbridge/backend/internal/modules/admin"
 	"craftbridge/backend/internal/modules/audit"
+	"craftbridge/backend/internal/modules/catalog"
 	"craftbridge/backend/internal/modules/payment"
 	"craftbridge/backend/internal/modules/receipt"
 	"craftbridge/backend/internal/modules/refund"
 	"craftbridge/backend/internal/modules/report"
+	"craftbridge/backend/internal/modules/seller"
 	"craftbridge/backend/internal/modules/storefront"
 	"craftbridge/backend/internal/modules/wishlist"
 	"craftbridge/backend/internal/platform/config"
@@ -252,6 +254,21 @@ func main() {
 	adminService := admin.NewService(adminRepo, auditService)
 	adminHandler := admin.NewHandler(adminService)
 
+	// Initialize Member 02 modules (Seller, Catalog, Inventory, Media).
+	sellerRepo := seller.NewRepository(dbPool)
+	sellerHandler := seller.NewHandler(seller.NewService(sellerRepo))
+
+	catalogRepo := catalog.NewRepository(dbPool)
+	catalogHandler := catalog.NewHandler(catalog.NewService(catalogRepo))
+
+	const catalogUploadDir = "uploads/catalog"
+	imageStore, err := catalog.NewLocalImageStore(catalogUploadDir)
+	if err != nil {
+		log.Fatalf("initialize catalog image storage: %v", err)
+	}
+	shopMediaHandler := seller.NewShopMediaHandler(sellerRepo, imageStore)
+	imageHandler := catalog.NewImageHandler(catalogRepo, imageStore)
+
 	paymentProvider := payment.NewPayHereSandboxProvider(cfg)
 	paymentRepo := payment.NewRepository(dbPool)
 	paymentService := payment.NewService(paymentRepo, paymentRepo, paymentProvider)
@@ -289,13 +306,24 @@ func main() {
 			audit.RegisterRoutes(v1, auditHandler)
 			report.RegisterRoutes(v1, reportHandler)
 			admin.RegisterRoutes(v1, adminHandler)
-		    storefront.RegisterRoutes(v1)
+
+			authenticate := platformhttp.RequireAuthenticatedUser()
+			seller.RegisterRoutes(v1, sellerHandler, authenticate)
+			seller.RegisterShopMediaRoutes(v1, shopMediaHandler, authenticate)
+			seller.RegisterAdminRoutes(v1, sellerHandler, authenticate, platformhttp.RequireAdminRole())
+			catalog.RegisterRoutes(v1, catalogHandler, authenticate)
+			catalog.RegisterInventoryRoutes(v1, catalogHandler, authenticate)
+			catalog.RegisterImageRoutes(v1, imageHandler, authenticate)
+
+			storefront.RegisterRoutes(v1)
 			wishlist.RegisterRoutes(v1, dbPool)
 			payment.RegisterRoutes(v1, paymentHandler)
 			refund.RegisterRoutes(v1, refundHandler)
 			receipt.RegisterRoutes(v1, receiptHandler)
 		},
 	)
+
+	router.StaticFS("/media/catalog", gin.Dir(catalogUploadDir, false))
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
@@ -308,7 +336,7 @@ func main() {
 	go func() {
 		log.Printf("CraftBridge API server starting on port %s (env: %s)", cfg.Port, cfg.AppEnv)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("HTTP server error: %v", err)
+			log.Fatalf("server forced to stop: %v", err)
 		}
 	}()
 

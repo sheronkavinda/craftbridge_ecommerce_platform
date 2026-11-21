@@ -1,6 +1,7 @@
 package http
 
 import (
+    "strconv"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -119,6 +120,9 @@ func RequireAuthenticatedUser() gin.HandlerFunc {
 		}
 
 		c.Set(ContextKeyActorID, actorID)
+        if userID, err := strconv.ParseInt(actorID, 10, 64); err == nil && userID > 0 {
+            c.Set("user_id", userID)
+        }
 		c.Set(ContextKeyActorName, actorName)
 		c.Set(ContextKeyActorRole, actorRole)
 
