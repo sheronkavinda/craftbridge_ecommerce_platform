@@ -1,4 +1,5 @@
-
+import { DOCUMENT } from '@angular/common';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
   computed,
@@ -7,11 +8,19 @@ import {
   OnInit,
   signal,
 } from '@angular/core';
-
-import { HttpErrorResponse } from '@angular/common/http';
-import { ActivatedRoute, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import {
+  catchError,
+  distinctUntilChanged,
+  EMPTY,
+  map,
+  of,
+  switchMap,
+  type Observable,
+} from 'rxjs';
 
+import { environment } from '../../../../environments/environment';
 import { Header } from '../../../shared/components/header/header';
 import { StorefrontApi } from '../services/storefront-api';
 import { WishlistApi } from '../services/wishlist-api';
@@ -35,6 +44,40 @@ interface ProductDetailData {
   sizes: string[];
 }
 
+function readCatalogProduct(response: unknown) {
+  if (!response || typeof response !== 'object' || !('product' in response)) {
+    throw new Error('Missing product in catalog response.');
+  }
+
+  const item = response.product;
+
+  if (
+    !item ||
+    typeof item !== 'object' ||
+    !('id' in item) || typeof item.id !== 'number' ||
+    !('title' in item) || typeof item.title !== 'string' ||
+    !('price_cents' in item) || typeof item.price_cents !== 'number' ||
+    !('currency' in item) || typeof item.currency !== 'string' ||
+    !('shop_name' in item) || typeof item.shop_name !== 'string' ||
+    !('available_qty' in item) || typeof item.available_qty !== 'number'
+  ) {
+    throw new Error('Invalid product in catalog response.');
+  }
+
+  return {
+    id: item.id,
+    name: item.title,
+    price: item.price_cents / 100,
+    currency: item.currency,
+    sellerName: item.shop_name,
+    stockQuantity: item.available_qty,
+    description:
+      'description' in item && typeof item.description === 'string'
+        ? item.description
+        : '',
+  };
+}
+
 @Component({
   selector: 'app-product-detail',
   standalone: true,
@@ -47,208 +90,231 @@ export class ProductDetail implements OnInit {
   private readonly storefrontApi = inject(StorefrontApi);
   private readonly wishlistApi = inject(WishlistApi);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly document = inject(DOCUMENT);
 
-  readonly productId = this.route.snapshot.paramMap.get('id');
+  get productId(): string | null {
+    return this.route.snapshot.paramMap.get('id');
+  }
 
-  // Real product data only
   readonly product = signal<ProductDetailData | null>(null);
-
-  // Product loading state
   readonly loading = signal(true);
   readonly error = signal('');
 
-  // Product selection
+  private readonly cartHttp = inject(HttpClient);
+  readonly cartPending = signal(false);
+  readonly cartMessage = signal('');
+
   readonly selectedImageIndex = signal(0);
   readonly selectedSize = signal('');
   readonly quantity = signal(1);
 
-  // Wishlist state
   readonly isWishlisted = signal(false);
   readonly wishlistLoading = signal(false);
   readonly wishlistMessage = signal('');
 
-  // Selected product image
   readonly selectedImage = computed(() => {
     const images = this.product()?.images ?? [];
-
     return images[this.selectedImageIndex()] ?? null;
   });
 
   ngOnInit(): void {
-    this.loadProduct();
-  }
+    this.route.paramMap
+      .pipe(
+        map(params => params.get('id')?.trim() ?? ''),
+        distinctUntilChanged(),
+        switchMap(id => {
+          this.product.set(null);
+          this.loading.set(true);
+          this.error.set('');
+          this.cartPending.set(false);
+          this.cartMessage.set('');
+          this.selectedImageIndex.set(0);
+          this.selectedSize.set('');
+          this.quantity.set(1);
+          this.isWishlisted.set(false);
+          this.wishlistLoading.set(false);
+          this.wishlistMessage.set('');
 
-  // Load product from Catalog API
-  private loadProduct(): void {
-    if (!this.productId) {
-      this.loading.set(false);
-      this.error.set('Invalid product ID.');
-      return;
-    }
-
-    this.loading.set(true);
-    this.error.set('');
-    this.product.set(null);
-
-    this.storefrontApi
-      .getProductById(this.productId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (response: unknown) => {
-          // Catalog API response structure is not confirmed yet.
-          // Do not map unknown data to ProductDetailData.
-
-          console.log('Catalog API response:', response);
-
-          this.loading.set(false);
-
-          this.error.set(
-            'Catalog API responded. Product data mapping is pending.'
-          );
-        },
-
-        error: (err: HttpErrorResponse) => {
-          this.loading.set(false);
-
-          if (err.status === 404) {
-            this.error.set('Product not found.');
-          } else if (err.status === 0) {
-            this.error.set(
-              'Cannot connect to the backend. Please check the server.'
-            );
-          } else {
-            this.error.set(
-              'Unable to load product details. Please try again later.'
-            );
+          if (!id) {
+            this.error.set('Invalid product ID.');
+            this.loading.set(false);
+            return EMPTY;
           }
 
-          console.error('Product API error:', err);
-        },
+          return this.storefrontApi.getProductById(id).pipe(
+            map(readCatalogProduct),
+            switchMap(item =>
+              this.storefrontApi.getProductImages(item.id).pipe(
+                map(({ items }) => {
+                  const apiOrigin = new URL(
+                    environment.apiBaseUrl,
+                    this.document.baseURI
+                  ).origin;
+
+                  return [...items]
+                    .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+                    .map(image => new URL(image.image_url, apiOrigin).href);
+                }),
+                // Keep the product visible if the gallery request fails.
+                catchError(() => of<string[]>([])),
+                map((images): ProductDetailData => ({
+                  id: String(item.id),
+                  name: item.name,
+                  price: item.price,
+                  currency: item.currency,
+                  sellerName: item.sellerName,
+                  stockQuantity: item.stockQuantity,
+                  description: item.description,
+                  images,
+                  rating: null,
+                  reviewCount: 0,
+                  materials: '',
+                  origin: '',
+                  handmadeStory: '',
+                  dimensions: '',
+                  returnsPolicy: '',
+                  sizes: [],
+                }))
+              )
+            ),
+            catchError((err: unknown) => {
+              const status = err instanceof HttpErrorResponse ? err.status : undefined;
+
+              if (status === 404) {
+                this.error.set('Product not found.');
+              } else if (status === 0) {
+                this.error.set('Cannot connect to the backend. Please check the server.');
+              } else {
+                this.error.set('Unable to load product details. Please try again later.');
+              }
+
+              this.loading.set(false);
+              return EMPTY;
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(product => {
+        this.product.set(product);
+        this.loading.set(false);
       });
   }
 
-  // Select gallery image
   selectImage(index: number): void {
     this.selectedImageIndex.set(index);
   }
 
-  // Select product size
   selectSize(size: string): void {
     this.selectedSize.set(size);
   }
 
-  // Increase quantity
   increaseQuantity(): void {
-    const stock = this.product()?.stockQuantity;
+    const item = this.product();
 
-    if (
-      stock === null ||
-      stock === undefined ||
-      this.quantity() < stock
-    ) {
-      this.quantity.update((value) => value + 1);
+    if (item && (item.stockQuantity === null || this.quantity() < item.stockQuantity)) {
+      this.quantity.update(value => value + 1);
     }
   }
 
-  // Decrease quantity
   decreaseQuantity(): void {
-    this.quantity.update((value) =>
-      Math.max(1, value - 1)
-    );
+    this.quantity.update(value => Math.max(1, value - 1));
   }
 
-  // Add or remove product from wishlist
   toggleWishlist(): void {
-    const productId = this.productId;
+    const item = this.product();
 
-    if (
-      !productId ||
-      !this.product() ||
-      this.wishlistLoading()
-    ) {
+    if (!item || this.wishlistLoading()) {
       return;
     }
 
+    const removing = this.isWishlisted();
     this.wishlistLoading.set(true);
     this.wishlistMessage.set('');
 
-    // Remove from wishlist
-    if (this.isWishlisted()) {
-      this.wishlistApi
-        .removeFromWishlist(productId)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: () => {
-            this.isWishlisted.set(false);
+    const request: Observable<unknown> = removing
+      ? this.wishlistApi.removeFromWishlist(item.id)
+      : this.wishlistApi.addToWishlist(item.id);
 
-            this.wishlistMessage.set(
-              'Removed from wishlist.'
-            );
-
-            this.wishlistLoading.set(false);
-          },
-
-          error: (err: HttpErrorResponse) => {
-            this.handleWishlistError(err);
-          },
-        });
-
-      return;
-    }
-
-    // Add to wishlist
-    this.wishlistApi
-      .addToWishlist(productId)
+    request
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          this.isWishlisted.set(true);
+          if (this.product() !== item) {
+            return;
+          }
 
+          this.isWishlisted.set(!removing);
           this.wishlistMessage.set(
-            'Added to wishlist.'
+            removing ? 'Removed from wishlist.' : 'Added to wishlist.'
           );
-
           this.wishlistLoading.set(false);
         },
-
         error: (err: HttpErrorResponse) => {
-          this.handleWishlistError(err);
+          if (this.product() !== item) {
+            return;
+          }
+
+          this.wishlistMessage.set(
+            err.status === 401
+              ? 'Please sign in to manage your wishlist.'
+              : 'Unable to update wishlist. Please try again.'
+          );
+          this.wishlistLoading.set(false);
         },
       });
   }
 
-  // Handle wishlist API errors
-  private handleWishlistError(
-    err: HttpErrorResponse
-  ): void {
-    this.wishlistLoading.set(false);
-
-    if (err.status === 401) {
-      this.wishlistMessage.set(
-        'Please sign in to manage your wishlist.'
-      );
-    } else {
-      this.wishlistMessage.set(
-        'Unable to update wishlist. Please try again.'
-      );
-    }
-  }
-
-  // Cart integration belongs to Member 04
   addToCart(): void {
-    // TODO: Connect Member 04 cart API.
+    const item = this.product();
+    if (!item || this.cartPending()) {
+      return;
+    }
 
-    console.log('Add to cart:', {
-      productId: this.productId,
-      quantity: this.quantity(),
-      size: this.selectedSize(),
-    });
+    const quantity = this.quantity();
+    const maximum = Math.min(item.stockQuantity ?? 99, 99);
+    if (maximum < 1) {
+      this.cartMessage.set('This product is out of stock.');
+      return;
+    }
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > maximum) {
+      this.cartMessage.set(`Choose a quantity between 1 and ${maximum}.`);
+      return;
+    }
+
+    this.cartPending.set(true);
+    this.cartMessage.set('');
+
+    const baseUrl = environment.apiBaseUrl.replace(/\/+$/, '');
+    this.cartHttp.post(`${baseUrl}/me/cart/items`, {
+      product_id: Number(item.id),
+      quantity,
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          if (this.product() !== item) return;
+          this.cartPending.set(false);
+          this.cartMessage.set(`Added to cart: ${item.name} (quantity ${quantity}).`);
+        },
+        error: (err: HttpErrorResponse) => {
+          if (this.product() !== item) return;
+          this.cartPending.set(false);
+
+          if (err.status === 401) {
+            this.cartMessage.set('Please sign in to add items to your cart.');
+          } else if (err.status === 409) {
+            this.cartMessage.set('This quantity is unavailable. Check your cart and available stock.');
+          } else if (err.status === 0) {
+            this.cartMessage.set('Connection lost. Check your cart before trying again.');
+          } else {
+            this.cartMessage.set('Could not add this item. Please check your cart and try again.');
+          }
+        },
+      });
   }
-
-  // Checkout integration pending
   buyNow(): void {
-    // TODO: Connect checkout API.
-
+    // TODO: Connect the checkout API.
     console.log('Buy now:', this.productId);
   }
 }
