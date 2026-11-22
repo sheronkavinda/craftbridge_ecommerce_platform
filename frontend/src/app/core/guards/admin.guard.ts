@@ -1,18 +1,13 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { environment } from '../../../environments/environment';
+import { AuthService } from '../auth/auth.service';
 
 export const adminGuard: CanActivateFn = () => {
   const router = inject(Router);
-  const rawRole = (localStorage.getItem('user_role') ?? '').trim();
-
-  if (!rawRole && !environment.production) {
+  const auth = inject(AuthService);
+  if (auth.isLoggedIn() && auth.role() === 'admin') {
     return true;
   }
 
-  if (rawRole.toLowerCase() === 'admin') {
-    return true;
-  }
-
-  return router.createUrlTree(['/']);
+  return router.createUrlTree(['/login']);
 };

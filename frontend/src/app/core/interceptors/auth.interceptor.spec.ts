@@ -1,6 +1,7 @@
+import { HttpClient, HttpErrorResponse, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { TestBed } from '@angular/core/testing';
-import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { environment } from '../../../environments/environment';
 import { authInterceptor } from './auth.interceptor';
 
@@ -12,6 +13,7 @@ describe('authInterceptor', () => {
     localStorage.clear();
     TestBed.configureTestingModule({
       providers: [
+        provideRouter([]),
         provideHttpClient(withInterceptors([authInterceptor])),
         provideHttpClientTesting(),
       ],
@@ -25,46 +27,42 @@ describe('authInterceptor', () => {
     localStorage.clear();
   });
 
-  it('adds admin dev actor headers for /admin/ API requests', () => {
+  it('attaches the bearer token and never trusts stored dev actor headers', () => {
+    localStorage.setItem('access_token', 'valid-session-token');
+    localStorage.setItem('user_role', 'admin');
+    localStorage.setItem('user_id', '9001');
+    localStorage.setItem('user_name', 'System Admin');
+
     http.get(`${environment.apiBaseUrl}/admin/dashboard`).subscribe();
 
     const req = httpMock.expectOne(`${environment.apiBaseUrl}/admin/dashboard`);
-    expect(req.request.headers.get('X-Actor-Role')).toBe('admin');
-    expect(req.request.headers.get('X-Actor-ID')).toBe('admin-001');
-    expect(req.request.headers.get('X-Actor-Name')).toBe('System Admin');
+    expect(req.request.headers.get('Authorization')).toBe('Bearer valid-session-token');
+    expect(req.request.headers.has('X-Actor-Role')).toBeFalse();
+    expect(req.request.headers.has('X-Actor-ID')).toBeFalse();
+    expect(req.request.headers.has('X-Actor-Name')).toBeFalse();
     req.flush({});
   });
 
-  it('adds buyer dev actor headers for /me/ and /orders/ API requests', () => {
-    http.get(`${environment.apiBaseUrl}/me/payments`).subscribe();
-    const meReq = httpMock.expectOne(`${environment.apiBaseUrl}/me/payments`);
-    expect(meReq.request.headers.get('X-Actor-Role')).toBe('buyer');
-    expect(meReq.request.headers.get('X-Actor-ID')).toBe('buyer-003');
-    expect(meReq.request.headers.get('X-Actor-Name')).toBe('Ruwan Fernando');
-    meReq.flush({});
-
-    http.post(`${environment.apiBaseUrl}/orders/order-005/payments`, {}).subscribe();
-    const orderReq = httpMock.expectOne(`${environment.apiBaseUrl}/orders/order-005/payments`);
-    expect(orderReq.request.headers.get('X-Actor-Role')).toBe('buyer');
-    expect(orderReq.request.headers.get('X-Actor-ID')).toBe('buyer-003');
-    orderReq.flush({});
-  });
-
-  it('adds seller dev actor headers for /seller/ API requests', () => {
-    http.get(`${environment.apiBaseUrl}/seller/earnings`).subscribe();
-
-    const req = httpMock.expectOne(`${environment.apiBaseUrl}/seller/earnings`);
-    expect(req.request.headers.get('X-Actor-Role')).toBe('seller');
-    expect(req.request.headers.get('X-Actor-ID')).toBe('seller-u3');
-    req.flush({});
-  });
-
-  it('does not attach actor headers to non-API URLs', () => {
+  it('does not send credentials to non-API URLs', () => {
+    localStorage.setItem('access_token', 'valid-session-token');
     http.get('https://example.com/public-config.json').subscribe();
 
     const req = httpMock.expectOne('https://example.com/public-config.json');
-    expect(req.request.headers.has('X-Actor-Role')).toBeFalse();
-    expect(req.request.headers.has('X-Actor-ID')).toBeFalse();
+    expect(req.request.headers.has('Authorization')).toBeFalse();
     req.flush({});
+  });
+
+  it('clears an expired session after a protected API request receives 401', () => {
+    localStorage.setItem('access_token', 'expired-session-token');
+    let response: unknown;
+
+    http.get(`${environment.apiBaseUrl}/me`).subscribe({
+      error: (error: HttpErrorResponse) => (response = error),
+    });
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/me`);
+    req.flush({ error: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+
+    expect(response).toBeTruthy();
+    expect(localStorage.getItem('access_token')).toBeNull();
   });
 });

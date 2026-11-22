@@ -1,6 +1,9 @@
 import { HttpInterceptorFn } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { catchError, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { resolveDevActorForUrl } from '../auth/dev-actors';
+import { AuthService } from '../auth/auth.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   if (!req.url.startsWith(environment.apiBaseUrl)) {
@@ -8,25 +11,20 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   }
 
   const token = (localStorage.getItem('access_token') ?? '').trim();
-  const storedRole = (localStorage.getItem('user_role') ?? '').trim();
-  const storedId = (localStorage.getItem('user_id') ?? '').trim();
-  const storedName = (localStorage.getItem('user_name') ?? '').trim();
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  const authRequest = token
+    ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } })
+    : req;
 
-  // DEV ONLY - replace with real auth once Member 01's authentication module is merged.
-  const fallbackActor = !environment.production ? resolveDevActorForUrl(req.url) : null;
-
-  const actorRole = storedRole || (fallbackActor ? fallbackActor.role : '');
-  const actorId = storedId || (fallbackActor ? fallbackActor.id : '');
-  const actorName = storedName || (fallbackActor ? fallbackActor.name : '');
-
-  let headers = req.headers;
-  if (token) {
-    headers = headers.set('Authorization', `Bearer ${token}`);
-  }
-  headers = headers
-    .set('X-Actor-Role', actorRole)
-    .set('X-Actor-ID', actorId)
-    .set('X-Actor-Name', actorName);
-
-  return next(req.clone({ headers }));
+  return next(authRequest).pipe(
+    catchError((error: { status?: number }) => {
+      const isAuthEntryPoint = /\/auth\/(login|register|forgot-password|reset-password)$/.test(req.url);
+      if (token && error.status === 401 && !isAuthEntryPoint) {
+        auth.clearSession();
+        void router.navigate(['/login'], { queryParams: { reason: 'expired' } });
+      }
+      return throwError(() => error);
+    }),
+  );
 };

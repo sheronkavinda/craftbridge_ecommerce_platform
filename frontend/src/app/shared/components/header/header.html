@@ -48,7 +48,7 @@
     <!-- Actions -->
     <div class="ml-auto flex items-center gap-4 text-[#14213A]">
       <a routerLink="/wishlist" aria-label="Wishlist" class="text-xl">♡</a>
-      <a routerLink="/login" aria-label="Account" class="text-xl">♙</a>
+      <a [routerLink]="auth.isLoggedIn() ? '/account/profile' : '/login'" aria-label="Account" class="text-xl">♙</a>
       <a routerLink="/cart" aria-label="Cart" class="text-xl">🛒</a>
 
       <a

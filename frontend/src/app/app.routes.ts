@@ -1,8 +1,10 @@
 
 import { Routes } from '@angular/router';
 import { adminGuard } from './core/guards/admin.guard';
+import { ACCOUNT_ROUTES } from './features/account/account.routes';
 
 export const routes: Routes = [
+  ...ACCOUNT_ROUTES,
   // Public Home Page
   {
     path: '',

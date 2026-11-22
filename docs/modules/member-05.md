@@ -213,13 +213,15 @@ $$\text{md5sig} = \text{UPPER}\Big(\text{MD5}\big(\text{merchant\_id} + \text{or
 Example in PowerShell / Bash (assuming `PAYHERE_MERCHANT_ID=1211149`, `PAYHERE_MERCHANT_SECRET=test_secret`, `order_id=order-005`, `payhere_amount=97.00`, `payhere_currency=USD`, `status_code=2`):
 
 ```bash
-# 1. Initiate a payment attempt as buyer-003
+# 1. Set JWT to the access_token returned from POST /api/v1/auth/login
+JWT="<access-token>"
+
+# 2. Initiate a payment attempt as the authenticated buyer
 curl -X POST http://localhost:8080/api/v1/orders/order-005/payments \
-  -H "X-Actor-ID: buyer-003" \
-  -H "X-Actor-Role: BUYER" \
+  -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json"
 
-# 2. Compute md5sig (example using python3 one-liner)
+# 3. Compute md5sig (example using python3 one-liner)
 MD5SIG=$(python3 -c '
 import hashlib
 m_id, o_id, amt, cur, code, secret = "1211149", "order-005", "97.00", "USD", "2", "test_secret"
@@ -228,7 +230,7 @@ raw = f"{m_id}{o_id}{amt}{cur}{code}{sec_md5}"
 print(hashlib.md5(raw.encode()).hexdigest().upper())
 ')
 
-# 3. Post the signed webhook to mark the attempt SUCCESS
+# 4. Post the signed webhook to mark the attempt SUCCESS
 curl -X POST http://localhost:8080/api/v1/webhooks/payments/payhere \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "merchant_id=1211149" \
@@ -294,7 +296,7 @@ When running `npm start` (`http://localhost:4200`), navigate directly to any of 
   - **Payout Settlement Table (`seller_payouts`)**: Seller earnings (`GET /api/v1/seller/earnings`) reads settled payouts from `public.seller_payouts` if the table exists (`to_regclass('public.seller_payouts') IS NOT NULL`).
   - **Currency Formatting Alignment**: Member 05 stores and displays amounts in `USD` (`amount_cents` formatted via `MoneyPipe`), matching the Checkout, Payment Status, Buyer Refunds, and Seller Earnings mockups (Mockups 12, 13, 15, 23), while keeping `refunds.amount` (`NUMERIC(12,2)`) populated for Member 06's admin/report queries. Note that Member 06's admin refund view currently formats `refunds.amount` with `CurrencyLkrPipe`; the team should align on USD vs LKR display in the admin view during final integration.
 - **Member 01 (Auth) & Member 03 (Storefront / Layouts)**:
-  - **Dev Actor Interceptor**: `frontend/src/app/core/auth/dev-actors.ts` and `auth.interceptor.ts` inject `X-Actor-ID` / `X-Actor-Role` headers (`buyer-003` for `/me/` and `/orders/`, `seller-u3` for `/seller/`, `admin-demo` for `/admin/`) when no JWT token is present. Once Member 01's JWT login flow is merged, real bearer tokens take precedence automatically.
+  - **JWT Authentication**: Protected API routes require a valid Bearer JWT issued by the Member 01 auth endpoints. Development actor headers are rejected by default; a legacy bypass requires both `APP_ENV=development` and `ENABLE_LOCAL_DEV_AUTH=1` and must only be used for isolated local testing.
   - **Layout Shells**: `payments-shell`, `account-shell`, and `seller-shell` under `frontend/src/app/features/payments/shared/` are self-contained layouts matching Mockups 12, 13, 15, and 23 and can be swapped for shared workspace shells once merged.
 
 ---
