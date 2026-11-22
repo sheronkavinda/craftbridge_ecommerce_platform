@@ -1,7 +1,6 @@
 package http
 
 import (
-    "strconv"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -22,13 +22,16 @@ import (
 )
 
 const (
-	ContextKeyRequestID = "request_id"
-	ContextKeyActorID   = "actor_id"
-	ContextKeyActorName = "actor_name"
-	ContextKeyActorRole = "actor_role"
+	ContextKeyRequestID  = "request_id"
+	ContextKeyActorID    = "actor_id"
+	ContextKeyActorName  = "actor_name"
+	ContextKeyActorRole  = "actor_role"
+	ContextKeyActorRoles = "actor_roles"
+	ContextKeySessionID  = "session_id"
 )
 
 var activeConfig atomic.Pointer[config.Config]
+var activeDB atomic.Pointer[pgxpool.Pool]
 
 // RouteRegistrar defines a function signature for registering module routes onto the /api/v1 group.
 type RouteRegistrar func(rg *gin.RouterGroup)
@@ -39,16 +42,21 @@ type jwtHeader struct {
 }
 
 type jwtClaims struct {
-	Sub  string `json:"sub"`
-	Name string `json:"name"`
-	Role string `json:"role"`
-	Exp  int64  `json:"exp"`
+	Sub   string   `json:"sub"`
+	Name  string   `json:"name"`
+	Role  string   `json:"role"`
+	Exp   int64    `json:"exp"`
+	JTI   string   `json:"jti"`
+	Roles []string `json:"roles,omitempty"`
 }
 
 // NewRouter initializes the Gin engine, standard middleware, health check, Swagger endpoints, and /api/v1 group.
 func NewRouter(cfg *config.Config, db *pgxpool.Pool, registrars ...RouteRegistrar) *gin.Engine {
 	if cfg != nil {
 		activeConfig.Store(cfg)
+	}
+	if db != nil {
+		activeDB.Store(db)
 	}
 
 	if cfg != nil && strings.EqualFold(cfg.AppEnv, "production") {
@@ -110,7 +118,7 @@ func RequireAuthenticatedUser() gin.HandlerFunc {
 			return
 		}
 
-		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+		actorID, actorName, actorRole, sessionID, err := extractVerifiedIdentity(c)
 
 		if err != nil || strings.TrimSpace(actorID) == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
@@ -120,11 +128,19 @@ func RequireAuthenticatedUser() gin.HandlerFunc {
 		}
 
 		c.Set(ContextKeyActorID, actorID)
-        if userID, err := strconv.ParseInt(actorID, 10, 64); err == nil && userID > 0 {
-            c.Set("user_id", userID)
-        }
+		if userID, err := strconv.ParseInt(actorID, 10, 64); err == nil && userID > 0 {
+			c.Set("user_id", userID)
+		}
 		c.Set(ContextKeyActorName, actorName)
 		c.Set(ContextKeyActorRole, actorRole)
+		if roles, exists := c.Get(ContextKeyActorRoles); exists {
+			c.Set(ContextKeyActorRoles, roles)
+		} else {
+			c.Set(ContextKeyActorRoles, []string{actorRole})
+		}
+		if sessionID != "" {
+			c.Set(ContextKeySessionID, sessionID)
+		}
 
 		c.Next()
 	}
@@ -134,7 +150,7 @@ func RequireAuthenticatedUser() gin.HandlerFunc {
 // It blocks any caller that is not authenticated with the 'admin' role.
 func RequireAdminRole() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+		actorID, actorName, actorRole, sessionID, err := extractVerifiedIdentity(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": "unauthorized: valid authentication credentials required",
@@ -142,7 +158,7 @@ func RequireAdminRole() gin.HandlerFunc {
 			return
 		}
 
-		if !strings.EqualFold(actorRole, "admin") {
+		if !hasActorRole(c, actorRole, "admin") {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": "forbidden: strict admin role required",
 			})
@@ -159,6 +175,9 @@ func RequireAdminRole() gin.HandlerFunc {
 		c.Set(ContextKeyActorID, actorID)
 		c.Set(ContextKeyActorName, actorName)
 		c.Set(ContextKeyActorRole, "admin")
+		if sessionID != "" {
+			c.Set(ContextKeySessionID, sessionID)
+		}
 		c.Next()
 	}
 }
@@ -167,7 +186,7 @@ func RequireAdminRole() gin.HandlerFunc {
 // It blocks any caller that is not authenticated with the 'buyer' role.
 func RequireBuyerRole() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+		actorID, actorName, actorRole, sessionID, err := extractVerifiedIdentity(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": "unauthorized: valid authentication credentials required",
@@ -175,7 +194,7 @@ func RequireBuyerRole() gin.HandlerFunc {
 			return
 		}
 
-		if !strings.EqualFold(actorRole, "buyer") {
+		if !hasActorRole(c, actorRole, "buyer") {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": "forbidden: buyer role required",
 			})
@@ -192,6 +211,9 @@ func RequireBuyerRole() gin.HandlerFunc {
 		c.Set(ContextKeyActorID, actorID)
 		c.Set(ContextKeyActorName, actorName)
 		c.Set(ContextKeyActorRole, "buyer")
+		if sessionID != "" {
+			c.Set(ContextKeySessionID, sessionID)
+		}
 		c.Next()
 	}
 }
@@ -200,7 +222,7 @@ func RequireBuyerRole() gin.HandlerFunc {
 // It blocks any caller that is not authenticated with the 'seller' role.
 func RequireSellerRole() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		actorID, actorName, actorRole, err := extractVerifiedIdentity(c)
+		actorID, actorName, actorRole, sessionID, err := extractVerifiedIdentity(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": "unauthorized: valid authentication credentials required",
@@ -208,7 +230,7 @@ func RequireSellerRole() gin.HandlerFunc {
 			return
 		}
 
-		if !strings.EqualFold(actorRole, "seller") {
+		if !hasActorRole(c, actorRole, "seller") {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": "forbidden: seller role required",
 			})
@@ -225,11 +247,14 @@ func RequireSellerRole() gin.HandlerFunc {
 		c.Set(ContextKeyActorID, actorID)
 		c.Set(ContextKeyActorName, actorName)
 		c.Set(ContextKeyActorRole, "seller")
+		if sessionID != "" {
+			c.Set(ContextKeySessionID, sessionID)
+		}
 		c.Next()
 	}
 }
 
-func extractVerifiedIdentity(c *gin.Context) (actorID, actorName, actorRole string, err error) {
+func extractVerifiedIdentity(c *gin.Context) (actorID, actorName, actorRole, sessionID string, err error) {
 	cfg := activeConfig.Load()
 	appEnv := "development"
 	jwtSecret := ""
@@ -247,42 +272,86 @@ func extractVerifiedIdentity(c *gin.Context) (actorID, actorName, actorRole stri
 	}
 
 	authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
-	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
-		token := strings.TrimSpace(authHeader[7:])
-		claims, verifyErr := verifyHS256JWT(token, jwtSecret)
-		if verifyErr != nil {
-			return "", "", "", verifyErr
+	if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		if !strings.EqualFold(appEnv, "development") || os.Getenv("ENABLE_LOCAL_DEV_AUTH") != "1" {
+			return "", "", "", "", errors.New("bearer token authentication is required")
 		}
-		name := strings.TrimSpace(claims.Name)
-		if name == "" {
-			name = "Admin"
+		roleHeader := strings.TrimSpace(c.GetHeader("X-Actor-Role"))
+		if roleHeader == "" {
+			roleHeader = strings.TrimSpace(c.GetHeader("X-User-Role"))
 		}
-		return strings.TrimSpace(claims.Sub), name, strings.TrimSpace(claims.Role), nil
+		idHeader := strings.TrimSpace(c.GetHeader("X-Actor-ID"))
+		if idHeader == "" {
+			idHeader = strings.TrimSpace(c.GetHeader("X-User-ID"))
+		}
+		nameHeader := strings.TrimSpace(c.GetHeader("X-Actor-Name"))
+		if nameHeader == "" {
+			nameHeader = "Admin"
+		}
+		if roleHeader == "" || idHeader == "" {
+			return "", "", "", "", errors.New("missing authentication credentials")
+		}
+		c.Set(ContextKeyActorRoles, []string{roleHeader})
+		return idHeader, nameHeader, roleHeader, "", nil
 	}
+	token := strings.TrimSpace(authHeader[7:])
+	claims, verifyErr := verifyHS256JWT(token, jwtSecret)
+	if verifyErr != nil {
+		return "", "", "", "", verifyErr
+	}
+	if claims.JTI != "" {
+		db := activeDB.Load()
+		if db == nil {
+			return "", "", "", "", errors.New("session validation is unavailable")
+		}
+		sessionUserID, parseErr := strconv.ParseInt(claims.Sub, 10, 64)
+		if parseErr != nil || sessionUserID <= 0 {
+			return "", "", "", "", errors.New("invalid session subject")
+		}
+		var valid bool
+		if err := db.QueryRow(c.Request.Context(), `
+			SELECT EXISTS (
+				SELECT 1 FROM sessions
+				WHERE id = $1::uuid AND user_id = $2
+					AND revoked_at IS NULL AND expires_at > NOW()
+			)
+		`, claims.JTI, sessionUserID).Scan(&valid); err != nil {
+			return "", "", "", "", err
+		}
+		if !valid {
+			return "", "", "", "", errors.New("session is expired or revoked")
+		}
+	}
+	name := strings.TrimSpace(claims.Name)
+	if name == "" {
+		name = "Admin"
+	}
+	roles := claims.Roles
+	if len(roles) == 0 && strings.TrimSpace(claims.Role) != "" {
+		roles = []string{strings.TrimSpace(claims.Role)}
+	}
+	c.Set(ContextKeyActorRoles, roles)
+	return strings.TrimSpace(claims.Sub), name, strings.TrimSpace(claims.Role), claims.JTI, nil
+}
 
-	// Strictly restrict header-based identity fallback to development environments
-	if !strings.EqualFold(appEnv, "development") {
-		return "", "", "", errors.New("bearer token authentication is required")
+func hasActorRole(c *gin.Context, primaryRole, requiredRole string) bool {
+	if strings.EqualFold(primaryRole, requiredRole) {
+		return true
 	}
-
-	roleHeader := strings.TrimSpace(c.GetHeader("X-Actor-Role"))
-	if roleHeader == "" {
-		roleHeader = strings.TrimSpace(c.GetHeader("X-User-Role"))
+	value, exists := c.Get(ContextKeyActorRoles)
+	if !exists {
+		return false
 	}
-	idHeader := strings.TrimSpace(c.GetHeader("X-Actor-ID"))
-	if idHeader == "" {
-		idHeader = strings.TrimSpace(c.GetHeader("X-User-ID"))
+	roles, ok := value.([]string)
+	if !ok {
+		return false
 	}
-	nameHeader := strings.TrimSpace(c.GetHeader("X-Actor-Name"))
-	if nameHeader == "" {
-		nameHeader = "Admin"
+	for _, role := range roles {
+		if strings.EqualFold(role, requiredRole) {
+			return true
+		}
 	}
-
-	if roleHeader == "" || idHeader == "" {
-		return "", "", "", errors.New("missing authentication credentials")
-	}
-
-	return idHeader, nameHeader, roleHeader, nil
+	return false
 }
 
 func verifyHS256JWT(tokenStr, secret string) (*jwtClaims, error) {
@@ -377,7 +446,7 @@ func CORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, X-Actor-ID, X-Actor-Name, X-Actor-Role, Idempotency-Key")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, Idempotency-Key")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -416,7 +485,7 @@ const openAPISpecJSON = `{
   "openapi": "3.0.3",
   "info": {
     "title": "CraftBridge E-Commerce Platform API",
-    "description": "Backend REST API for CraftBridge (Member 06 - Admin, Reporting & Integration Module). In development mode, supply X-Actor-Role: admin and X-Actor-ID headers or a Bearer JWT token.",
+    "description": "Backend REST API for CraftBridge. Protected routes require a valid Bearer JWT token.",
     "version": "1.0.0"
   },
   "servers": [
@@ -436,8 +505,7 @@ const openAPISpecJSON = `{
     { "name": "Payments", "description": "Buyer order payment initiation and gateway checkout" }
   ],
   "security": [
-    { "BearerAuth": [] },
-    { "ActorRoleHeader": [], "ActorIDHeader": [] }
+    { "BearerAuth": [] }
   ],
   "components": {
     "securitySchemes": {
@@ -445,42 +513,7 @@ const openAPISpecJSON = `{
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "HS256 JWT token with role='admin'"
-      },
-      "ActorRoleHeader": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Actor-Role",
-        "description": "Development mode role header (set to 'admin')"
-      },
-      "ActorIDHeader": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Actor-ID",
-        "description": "Development mode actor identifier (e.g. 'admin-001')"
-      }
-    },
-    "parameters": {
-      "XActorRole": {
-        "name": "X-Actor-Role",
-        "in": "header",
-        "required": false,
-        "description": "Role of the caller in development mode (must be 'admin')",
-        "schema": { "type": "string", "default": "admin" }
-      },
-      "XActorID": {
-        "name": "X-Actor-ID",
-        "in": "header",
-        "required": false,
-        "description": "Unique identifier of the acting administrator",
-        "schema": { "type": "string", "default": "admin-001" }
-      },
-      "XActorName": {
-        "name": "X-Actor-Name",
-        "in": "header",
-        "required": false,
-        "description": "Display name of the acting administrator",
-        "schema": { "type": "string", "default": "System Admin" }
+        "description": "HS256 JWT token with server-side session validation"
       }
     },
     "schemas": {
@@ -824,9 +857,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Users"],
         "summary": "Aggregated administrative dashboard summary",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" }
         ],
         "responses": {
           "200": { "description": "Aggregated counts, revenue summary, and latest 5 audit log entries" },
@@ -840,9 +870,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Users"],
         "summary": "List platform users",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "q", "in": "query", "schema": { "type": "string", "maxLength": 100 }, "description": "Case-insensitive search on user name or email" },
           { "name": "role", "in": "query", "schema": { "type": "string" }, "description": "Filter by user role (e.g. buyer, seller, admin)" },
           { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "BANNED"] }, "description": "Filter by account status" },
@@ -861,9 +888,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Users"],
         "summary": "Update user account status (ACTIVE, SUSPENDED, BANNED)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Target user ID" }
         ],
         "requestBody": {
@@ -885,9 +909,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Users"],
         "summary": "Update user account status (PUT alias)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Target user ID" }
         ],
         "requestBody": {
@@ -908,9 +929,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Users"],
         "summary": "Update user role (BUYER, SELLER, ADMIN)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Target user ID" }
         ],
         "requestBody": {
@@ -933,9 +951,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Users"],
         "summary": "Update user role (PUT alias)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Target user ID" }
         ],
         "requestBody": {
@@ -960,9 +975,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Sellers"],
         "summary": "List seller onboarding applications",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "SUSPENDED"] } },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
           { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
@@ -977,9 +989,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Sellers"],
         "summary": "List seller applications filtered by review status",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "SUSPENDED"] } },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
           { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
@@ -994,9 +1003,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Sellers"],
         "summary": "Review and update seller application status (APPROVED, REJECTED, SUSPENDED)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Seller ID" }
         ],
         "requestBody": {
@@ -1017,9 +1023,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Sellers"],
         "summary": "Review and update seller application status (PATCH)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Seller ID" }
         ],
         "requestBody": {
@@ -1040,9 +1043,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Categories"],
         "summary": "List all product catalog categories",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" }
         ],
         "responses": {
           "200": { "description": "Array of categories" }
@@ -1052,9 +1052,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Categories"],
         "summary": "Create a new product category",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" }
         ],
         "requestBody": {
           "required": true,
@@ -1076,9 +1073,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Categories"],
         "summary": "Update an existing product category",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "requestBody": {
@@ -1099,9 +1093,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Categories"],
         "summary": "Delete a product category by ID",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "responses": {
@@ -1115,9 +1106,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Refunds"],
         "summary": "List refund requests for administrative review",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "PROCESSED"] } },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
           { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
@@ -1132,9 +1120,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Refunds"],
         "summary": "Approve or reject a refund request (PUT)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Refund ID" }
         ],
         "requestBody": {
@@ -1155,9 +1140,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Refunds"],
         "summary": "Approve or reject a refund request (PATCH)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Refund ID" }
         ],
         "requestBody": {
@@ -1180,9 +1162,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Audit Logs"],
         "summary": "Retrieve immutable administrative audit logs",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "actor_id", "in": "query", "schema": { "type": "string" } },
           { "name": "action", "in": "query", "schema": { "type": "string" } },
           { "name": "outcome", "in": "query", "schema": { "type": "string", "enum": ["SUCCESS", "FAILURE"] } },
@@ -1199,9 +1178,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Audit Logs"],
         "summary": "Retrieve append-only audit logs",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "actor_id", "in": "query", "schema": { "type": "string" } },
           { "name": "action", "in": "query", "schema": { "type": "string" } },
           { "name": "outcome", "in": "query", "schema": { "type": "string", "enum": ["SUCCESS", "FAILURE"] } },
@@ -1216,9 +1192,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Audit Logs"],
         "summary": "Record a new append-only audit log entry",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" }
         ],
         "requestBody": {
           "required": true,
@@ -1238,9 +1211,6 @@ const openAPISpecJSON = `{
         "tags": ["Reports"],
         "summary": "Aggregated seller revenue report (verified payments minus approved refunds)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "start_date", "in": "query", "schema": { "type": "string", "example": "2026-01-01" }, "description": "Start date (YYYY-MM-DD)" },
           { "name": "end_date", "in": "query", "schema": { "type": "string", "example": "2026-12-31" }, "description": "End date (YYYY-MM-DD)" },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }
@@ -1255,9 +1225,6 @@ const openAPISpecJSON = `{
         "tags": ["Reports"],
         "summary": "Platform net revenue summary (gross verified payments minus refunds)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "start_date", "in": "query", "schema": { "type": "string", "example": "2026-01-01" } },
           { "name": "end_date", "in": "query", "schema": { "type": "string", "example": "2026-12-31" } }
         ],
@@ -1271,9 +1238,6 @@ const openAPISpecJSON = `{
         "tags": ["Reports"],
         "summary": "Daily time-series breakdown of verified payments, refunds, and net revenue",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "start_date", "in": "query", "schema": { "type": "string", "example": "2026-01-01" } },
           { "name": "end_date", "in": "query", "schema": { "type": "string", "example": "2026-12-31" } },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 30 } }
@@ -1288,9 +1252,6 @@ const openAPISpecJSON = `{
         "tags": ["Payments"],
         "summary": "Initiate a payment attempt for a pending buyer order",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
         ],
         "responses": {
@@ -1340,9 +1301,6 @@ const openAPISpecJSON = `{
         "tags": ["Payments"],
         "summary": "List the authenticated buyer's payment attempts (newest first)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
           { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
           { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED", "EXPIRED", "CANCELLED"] } }
@@ -1360,9 +1318,6 @@ const openAPISpecJSON = `{
         "tags": ["Payments"],
         "summary": "Get a single buyer payment attempt by ID",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Payment attempt ID" }
         ],
         "responses": {
@@ -1378,9 +1333,6 @@ const openAPISpecJSON = `{
         "tags": ["Payments", "Admin - Refunds"],
         "summary": "Trigger an immediate reconciliation pass for timed-out PENDING payment attempts",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" }
         ],
         "responses": {
           "200": {
@@ -1401,9 +1353,6 @@ const openAPISpecJSON = `{
         "tags": ["Refunds"],
         "summary": "Submit a buyer refund request for a paid order",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" },
           { "name": "Idempotency-Key", "in": "header", "required": false, "schema": { "type": "string", "maxLength": 100 }, "description": "Optional idempotency key" }
         ],
@@ -1432,9 +1381,6 @@ const openAPISpecJSON = `{
         "tags": ["Admin - Refunds", "Refunds"],
         "summary": "Approve a refund request and execute provider refund",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Refund ID" }
         ],
         "responses": {
@@ -1453,9 +1399,6 @@ const openAPISpecJSON = `{
         "tags": ["Refunds"],
         "summary": "List the authenticated buyer's refund requests with timelines",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
           { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
           { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "APPROVED", "PROCESSED", "COMPLETED", "REJECTED"] } }
@@ -1473,9 +1416,6 @@ const openAPISpecJSON = `{
         "tags": ["Refunds"],
         "summary": "Get a single buyer refund request by ID with timeline",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Refund ID" }
         ],
         "responses": {
@@ -1491,9 +1431,6 @@ const openAPISpecJSON = `{
         "tags": ["Receipts"],
         "summary": "View or lazily issue an owner-restricted digital payment receipt for a paid order",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
         ],
         "responses": {
@@ -1517,9 +1454,6 @@ const openAPISpecJSON = `{
         "tags": ["Receipts"],
         "summary": "Download a printable HTML payment receipt for a paid order",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Order ID" }
         ],
         "responses": {
@@ -1543,9 +1477,6 @@ const openAPISpecJSON = `{
         "tags": ["Payments", "Reports"],
         "summary": "Get seller earnings projection (verified payments minus completed refunds and platform commission)",
         "parameters": [
-          { "$ref": "#/components/parameters/XActorRole" },
-          { "$ref": "#/components/parameters/XActorID" },
-          { "$ref": "#/components/parameters/XActorName" },
           { "name": "range_days", "in": "query", "schema": { "type": "integer", "enum": [7, 30, 90], "default": 30 } },
           { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
           { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }

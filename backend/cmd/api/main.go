@@ -10,8 +10,10 @@ import (
 	"syscall"
 	"time"
 
+	"craftbridge/backend/internal/modules/account"
 	"craftbridge/backend/internal/modules/admin"
 	"craftbridge/backend/internal/modules/audit"
+	"craftbridge/backend/internal/modules/auth"
 	"craftbridge/backend/internal/modules/catalog"
 	"craftbridge/backend/internal/modules/m04"
 	"craftbridge/backend/internal/modules/payment"
@@ -301,10 +303,21 @@ func main() {
 	)
 	receiptHandler := receipt.NewHandler(receiptService)
 
+	authRepo := auth.NewRepository(dbPool)
+	authService := auth.NewService(authRepo, dbPool, cfg)
+	authService.SetPasswordResetEmailSender(auth.NewSMTPPasswordResetSender(cfg))
+	authHandler := auth.NewHandler(authService)
+
+	accountRepo := account.NewRepository(dbPool)
+	accountService := account.NewService(accountRepo)
+	accountHandler := account.NewHandler(accountService)
+
 	router := platformhttp.NewRouter(
 		cfg,
 		dbPool,
 		func(v1 *gin.RouterGroup) {
+			auth.RegisterRoutes(v1, authHandler)
+			account.RegisterRoutes(v1, accountHandler)
 			audit.RegisterRoutes(v1, auditHandler)
 			report.RegisterRoutes(v1, reportHandler)
 			admin.RegisterRoutes(v1, adminHandler)

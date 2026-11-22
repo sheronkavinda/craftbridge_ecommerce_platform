@@ -1,0 +1,46 @@
+<main class="flex min-h-[calc(100vh-82px)] items-center justify-center bg-[#F7F3EE] px-6 py-12">
+  <form [formGroup]="form" (ngSubmit)="submit()"
+    class="w-full max-w-md rounded-2xl border border-[#E8E1D8] bg-white p-8 shadow-sm">
+    <p class="text-sm font-semibold uppercase tracking-[0.18em] text-[#B6502C]">Join CraftBridge</p>
+    <h1 class="mt-2 font-serif text-4xl font-bold text-[#14213A]">Create account</h1>
+    <label class="mt-8 block text-sm font-semibold">Full name
+      <input formControlName="name" autocomplete="name" required maxlength="120"
+        class="mt-2 w-full rounded-md border border-[#D9D1C5] px-4 py-3" />
+    </label>
+    @if (form.controls.name.touched && form.controls.name.invalid) {
+      <p class="mt-1 text-sm text-red-700">Enter your name (up to 120 characters).</p>
+    }
+    <label class="mt-5 block text-sm font-semibold">Email
+      <input formControlName="email" type="email" autocomplete="email" required
+        class="mt-2 w-full rounded-md border border-[#D9D1C5] px-4 py-3" />
+    </label>
+    @if (form.controls.email.touched && form.controls.email.invalid) {
+      <p class="mt-1 text-sm text-red-700">
+        {{ form.controls.email.hasError('required') ? 'Enter your email address.' : 'Enter a valid email address.' }}
+      </p>
+    }
+    <label class="mt-5 block text-sm font-semibold">Password
+      <input formControlName="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"
+        class="mt-2 w-full rounded-md border border-[#D9D1C5] px-4 py-3" />
+    </label>
+    @if (form.controls.password.touched && form.controls.password.invalid) {
+      <p class="mt-1 text-sm text-red-700">
+        @if (form.controls.password.hasError('required')) {
+          Enter a password.
+        } @else if (form.controls.password.hasError('minlength')) {
+          Password must be at least 8 characters.
+        } @else {
+          Password must be no more than 72 characters.
+        }
+      </p>
+    }
+    @if (error) { <p role="alert" class="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</p> }
+    <button type="submit" [disabled]="submitting"
+      class="mt-6 w-full rounded-md bg-[#B6502C] px-5 py-3 font-semibold text-white disabled:opacity-60">
+      {{ submitting ? 'Creating account...' : 'Create account' }}
+    </button>
+    <p class="mt-5 text-center text-sm">Already have an account?
+      <a routerLink="/login" class="font-semibold text-[#B6502C]">Sign in</a>
+    </p>
+  </form>
+</main>

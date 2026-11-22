@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	platformhttp "craftbridge/backend/internal/platform/http"
@@ -15,6 +16,9 @@ import (
 
 func init() {
 	gin.SetMode(gin.TestMode)
+	if err := os.Setenv("ENABLE_LOCAL_DEV_AUTH", "1"); err != nil {
+		panic(err)
+	}
 }
 
 func setupAdminTestRouter(repo RepositoryStore) *gin.Engine {
@@ -364,4 +368,3 @@ func TestHandler_ErrorMappingsAndSuccessEnvelopes(t *testing.T) {
 	// Ensure unused import warning is not triggered for platformhttp reference
 	_ = platformhttp.ContextKeyActorID
 }
-

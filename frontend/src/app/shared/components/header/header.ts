@@ -1,7 +1,8 @@
 
-import { Component, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { AuthService } from '../../../core/auth/auth.service';
 
 @Component({
   selector: 'app-header',
@@ -11,6 +12,7 @@ import { FormsModule } from '@angular/forms';
   styleUrl: './header.scss',
 })
 export class Header {
+  readonly auth = inject(AuthService);
   readonly menuOpen = signal(false);
 
   searchQuery = '';

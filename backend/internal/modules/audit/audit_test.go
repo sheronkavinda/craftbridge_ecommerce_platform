@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 
 func init() {
 	gin.SetMode(gin.TestMode)
+	if err := os.Setenv("ENABLE_LOCAL_DEV_AUTH", "1"); err != nil {
+		panic(err)
+	}
 }
 
 type fakeAuditStore struct {

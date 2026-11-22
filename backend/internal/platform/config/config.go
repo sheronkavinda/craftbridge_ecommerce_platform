@@ -15,6 +15,12 @@ type Config struct {
 	JWTSecret                       string
 	JWTExpiryHours                  int
 	CORSOrigins                     []string
+	SMTPHost                        string
+	SMTPPort                        int
+	SMTPUsername                    string
+	SMTPPassword                    string
+	SMTPFrom                        string
+	FrontendBaseURL                 string
 	PayHereMerchantID               string
 	PayHereMerchantSecret           string
 	PayHereCheckoutURL              string
@@ -37,6 +43,7 @@ func Load() *Config {
 	loadDotEnv(".env", "backend/.env", "../.env")
 
 	expiryHours := getPositiveIntEnv("JWT_EXPIRY_HOURS", 24)
+	smtpPort := getPositiveIntEnv("SMTP_PORT", 587)
 	reconcileAfterMinutes := getPositiveIntEnv("PAYMENT_RECONCILE_AFTER_MINUTES", 30)
 	attemptTTLHours := getPositiveIntEnv("PAYMENT_ATTEMPT_TTL_HOURS", 24)
 	reconcileIntervalSeconds := getNonNegativeIntEnv("PAYMENT_RECONCILE_INTERVAL_SECONDS", 300)
@@ -59,6 +66,12 @@ func Load() *Config {
 		JWTSecret:                       getEnv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production"),
 		JWTExpiryHours:                  expiryHours,
 		CORSOrigins:                     origins,
+		SMTPHost:                        getEnv("SMTP_HOST", ""),
+		SMTPPort:                        smtpPort,
+		SMTPUsername:                    getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:                    getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:                        getEnv("SMTP_FROM", ""),
+		FrontendBaseURL:                 getEnv("FRONTEND_BASE_URL", "http://localhost:4200"),
 		PayHereMerchantID:               getEnv("PAYHERE_MERCHANT_ID", ""),
 		PayHereMerchantSecret:           getEnv("PAYHERE_MERCHANT_SECRET", ""),
 		PayHereCheckoutURL:              getEnv("PAYHERE_CHECKOUT_URL", "https://sandbox.payhere.lk/pay/checkout"),
