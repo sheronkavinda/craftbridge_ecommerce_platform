@@ -160,21 +160,21 @@ func (r *Repository) UpdateUserRole(ctx context.Context, userID, role string) (*
 // ListSellerApplications fetches seller applications filtered by approval status.
 func (r *Repository) ListSellerApplications(ctx context.Context, status string, limit, offset int) ([]SellerApplication, error) {
 	const query = `
-		SELECT
-			s.id::text,
-			s.user_id::text,
-			COALESCE(u.name, ''),
-			COALESCE(u.email, ''),
-			s.store_name,
-			s.status,
-			COALESCE(s.notes, ''),
-			s.created_at,
-			s.reviewed_at
-		FROM sellers s
-		LEFT JOIN users u ON u.id::text = s.user_id::text
-		WHERE ($1 = '' OR s.status = $1)
-		ORDER BY s.created_at DESC
-		LIMIT $2 OFFSET $3
+        SELECT
+            s.id::text,
+            s.user_id::text,
+            COALESCE(u.name, ''),
+            COALESCE(u.email, ''),
+            s.store_name,
+            UPPER(s.status),
+            COALESCE(s.decision_reason, ''),
+            s.created_at,
+            s.reviewed_at
+        FROM seller_applications s
+        LEFT JOIN users u ON u.id = s.user_id
+        WHERE ($1 = '' OR s.status = LOWER($1))
+        ORDER BY s.created_at DESC, s.id DESC
+        LIMIT $2 OFFSET $3
 	`
 
 	rows, err := r.db.Query(ctx, query, status, limit, offset)

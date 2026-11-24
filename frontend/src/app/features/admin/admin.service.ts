@@ -66,9 +66,39 @@ export class AdminService {
       .pipe(map((res) => res.data ?? []));
   }
 
-  updateSellerStatus(sellerId: string, payload: UpdateSellerStatusPayload): Observable<SellerApplication> {
+  updateSellerStatus(
+    sellerId: string,
+    payload: UpdateSellerStatusPayload,
+  ): Observable<Pick<SellerApplication, 'id' | 'store_name' | 'status' | 'notes'>> {
+    const id = encodeURIComponent(sellerId);
+    const decisionUrl = `${this.baseUrl}/admin/seller-applications/${id}/decision`;
+
+    if (payload.status === 'APPROVED') {
+      return this.http
+        .post<{ shop: { name: string } }>(decisionUrl, { decision: 'approve' })
+        .pipe(map(({ shop }) => ({
+          id: sellerId,
+          store_name: shop.name,
+          status: 'APPROVED',
+          notes: '',
+        })));
+    }
+
+    if (payload.status === 'REJECTED') {
+      return this.http
+        .post<{
+          application: { id: number; store_name: string; status: string; decision_reason: string | null };
+        }>(decisionUrl, { decision: 'reject', reason: payload.notes?.trim() ?? '' })
+        .pipe(map(({ application }) => ({
+          id: String(application.id),
+          store_name: application.store_name,
+          status: application.status.toUpperCase(),
+          notes: application.decision_reason ?? '',
+        })));
+    }
+
     return this.http
-      .patch<ApiResponse<SellerApplication>>(`${this.baseUrl}/admin/sellers/${encodeURIComponent(sellerId)}/status`, payload)
+      .patch<ApiResponse<SellerApplication>>(`${this.baseUrl}/admin/sellers/${id}/status`, payload)
       .pipe(map((res) => res.data));
   }
 
