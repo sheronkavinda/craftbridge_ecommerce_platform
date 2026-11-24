@@ -263,9 +263,9 @@ export class SellerApprovalsComponent implements OnInit {
     return ctrl.invalid && (ctrl.touched || ctrl.dirty);
   }
 
-  private applyUpdatedApplication(updated: SellerApplication): void {
+  private applyUpdatedApplication(updated: Pick<SellerApplication, 'id' | 'store_name' | 'status' | 'notes'>): void {
     this.applications.update((list) =>
-      list.map((item) => (item.id === updated.id ? updated : item)),
+      list.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)),
     );
   }
 
