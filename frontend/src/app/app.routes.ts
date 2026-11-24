@@ -4,6 +4,10 @@ import { adminGuard } from './core/guards/admin.guard';
 import { ACCOUNT_ROUTES } from './features/account/account.routes';
 
 export const routes: Routes = [
+  {
+    path: 'cart',
+    loadComponent: () => import('./features/cart/cart-page').then(m => m.CartPage),
+  },
   ...ACCOUNT_ROUTES,
   // Public Home Page
   {
