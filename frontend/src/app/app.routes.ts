@@ -1,9 +1,16 @@
+import { authGuard } from './core/guards/auth.guard';
 
 import { Routes } from '@angular/router';
 import { adminGuard } from './core/guards/admin.guard';
 import { ACCOUNT_ROUTES } from './features/account/account.routes';
 
 export const routes: Routes = [
+  {
+    path: 'seller/application',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/seller/seller-application')
+      .then(m => m.SellerApplicationPage),
+  },
   {
     path: 'cart',
     loadComponent: () => import('./features/cart/cart-page').then(m => m.CartPage),
