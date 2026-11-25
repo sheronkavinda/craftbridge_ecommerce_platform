@@ -57,13 +57,40 @@ func (r *Repository) GetRevenueSummary(ctx context.Context, startStr, endStr str
 // ListUsers retrieves platform users with parameterized role, status, and case-insensitive search filters.
 func (r *Repository) ListUsers(ctx context.Context, role, status, search string, limit, offset int) ([]UserSummary, error) {
 	const query = `
-		SELECT id::text, name, email, role, status, created_at
-		FROM users
-		WHERE ($1 = '' OR role = $1)
-		  AND ($2 = '' OR status = $2)
-		  AND ($3 = '' OR name ILIKE '%' || $3 || '%' ESCAPE '\' OR email ILIKE '%' || $3 || '%' ESCAPE '\')
-		ORDER BY created_at DESC
-		LIMIT $4 OFFSET $5
+        WITH accounts AS (
+            SELECT
+                u.id,
+                COALESCE(u.name, '') AS name,
+                u.email,
+                CASE u.status
+                    WHEN 'disabled' THEN 'SUSPENDED'
+                    ELSE UPPER(u.status)
+                END AS status,
+                u.created_at,
+                ARRAY(
+                    SELECT UPPER(r.name)
+                    FROM user_roles ur
+                    JOIN roles r ON r.id = ur.role_id
+                    WHERE ur.user_id = u.id
+                    ORDER BY CASE r.name
+                        WHEN 'admin' THEN 1
+                        WHEN 'seller' THEN 2
+                        WHEN 'buyer' THEN 3
+                        ELSE 4
+                    END, r.name
+                ) AS assigned_roles
+            FROM users u
+        )
+        SELECT id::text, name, email,
+               COALESCE(assigned_roles[1], 'UNASSIGNED'),
+               status, created_at
+        FROM accounts
+        WHERE ($1 = '' OR $1 = ANY(assigned_roles))
+          AND ($2 = '' OR status = $2)
+          AND ($3 = '' OR name ILIKE '%' || $3 || '%' ESCAPE '\'
+                       OR email ILIKE '%' || $3 || '%' ESCAPE '\')
+        ORDER BY created_at DESC, id DESC
+        LIMIT $4 OFFSET $5
 	`
 
 	rows, err := r.db.Query(ctx, query, role, status, search, limit, offset)
