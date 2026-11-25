@@ -302,6 +302,15 @@ func (r *Repository) ApproveApplication(
 		return nil, err
 	}
 
+    _, err = tx.Exec(ctx, `
+        INSERT INTO user_roles (user_id, role_id)
+        VALUES ($1, (SELECT id FROM roles WHERE name = 'seller'))
+        ON CONFLICT (user_id, role_id) DO NOTHING
+    `, userID)
+    if err != nil {
+        return nil, fmt.Errorf("grant seller role: %w", err)
+    }
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
