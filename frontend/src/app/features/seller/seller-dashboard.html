@@ -1,0 +1,106 @@
+<app-header />
+<main>
+  <a routerLink="/seller/application">Seller application</a>
+  <h1>Seller dashboard</h1>
+  @if (error()) {
+    <p role="alert">{{ error() }}</p>
+  }
+  @if (message()) {
+    <p role="status">{{ message() }}</p>
+  }
+  @if (busy()) {
+    <p role="status">Working…</p>
+  }
+  @if (dash(); as d) {
+    <section>
+      <h2>{{ d.shop.name }}</h2>
+      <a [routerLink]="['/artisans', d.shop.slug]">View public shop</a> ·
+      <a routerLink="/seller/orders">Fulfillment orders</a>
+      <dl>
+        <div>
+          <dt>Products</dt>
+          <dd>{{ d.total_products }}</dd>
+        </div>
+        <div>
+          <dt>Published</dt>
+          <dd>{{ d.published_products }}</dd>
+        </div>
+        <div>
+          <dt>Drafts</dt>
+          <dd>{{ d.draft_products }}</dd>
+        </div>
+        <div>
+          <dt>Archived</dt>
+          <dd>{{ d.archived_products }}</dd>
+        </div>
+        <div>
+          <dt>Low stock products</dt>
+          <dd>{{ d.low_stock_products }}</dd>
+        </div>
+        <div>
+          <dt>Available units</dt>
+          <dd>{{ d.available_units }}</dd>
+        </div>
+      </dl>
+    </section>
+    <section>
+      <h2>Products</h2>
+      <a class="action" routerLink="/seller/products/new">Create product</a>
+      @for (p of products(); track p.id) {
+        <article>
+          <a [routerLink]="['/seller/products', p.id]">{{ p.title }}</a
+          ><span
+            >{{ p.status }} · {{ p.currency }} {{ p.price_cents / 100 | number: '1.2-2' }} ·
+            {{ p.available_qty }} available
+            @if (p.status === 'published' && p.available_qty <= 5) {
+              · Low stock
+            }
+          </span>
+        </article>
+      } @empty {
+        <p>Your shop has no products yet.</p>
+      }
+    </section>
+    <section>
+      <h2>Shop profile</h2>
+      <form #profile="ngForm" (ngSubmit)="save()">
+        <fieldset [disabled]="busy()">
+          <label
+            >Shop name<input name="name" required minlength="3" maxlength="120" [(ngModel)]="name"
+          /></label>
+          <label
+            >Description<textarea
+              name="description"
+              maxlength="2000"
+              [(ngModel)]="description"
+            ></textarea>
+          </label>
+          <label
+            >Contact email<input
+              name="email"
+              type="email"
+              email
+              maxlength="255"
+              [(ngModel)]="email"
+          /></label>
+          <button [disabled]="profile.invalid">Save shop profile</button>
+        </fieldset>
+      </form>
+      @for (kind of ['profile', 'banner']; track kind) {
+        @if (kind === 'profile' ? d.shop.profile_image_url : d.shop.banner_image_url; as path) {
+          <img [src]="api.media(path)" [alt]="kind + ' image'" />
+        }
+        <label
+          >Upload {{ kind }} image<input
+            #file
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            [disabled]="busy()"
+            (change)="upload(kind === 'profile' ? 'profile' : 'banner', file)"
+        /></label>
+      }
+    </section>
+  } @else if (!busy()) {
+    <button (click)="load()">Retry</button>
+  }
+</main>

@@ -265,7 +265,7 @@ func main() {
 	catalogService := catalog.NewService(catalogRepo)
 	catalogHandler := catalog.NewHandler(catalogService)
 
-	const catalogUploadDir = "uploads/catalog"
+	catalogUploadDir := cfg.CatalogUploadDir
 	imageStore, err := catalog.NewLocalImageStore(catalogUploadDir)
 	if err != nil {
 		log.Fatalf("initialize catalog image storage: %v", err)
