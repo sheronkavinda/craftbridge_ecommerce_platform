@@ -1,5 +1,5 @@
 <app-header />
-<main>
+<main class="editor">
   <a routerLink="/seller/dashboard">Back to seller dashboard</a>
   <h1>{{ id ? 'Product editor' : 'Create a product' }}</h1>
   @if (error()) {
@@ -12,7 +12,7 @@
     <p role="status">Working…</p>
   }
   @if (ready()) {
-    <section>
+    <section class="details">
       <h2>Product details</h2>
       <form #form="ngForm" (ngSubmit)="save()">
         <fieldset [disabled]="busy() || item()?.status === 'archived'">
@@ -65,7 +65,7 @@
       </form>
     </section>
     @if (item(); as p) {
-      <section>
+      <section class="media-panel">
         <h2>Product images</h2>
         @for (i of images(); track i.id) {
           <figure>
@@ -130,7 +130,7 @@
         }
       </section>
       @if (p.status !== 'archived') {
-        <button [disabled]="busy()" (click)="archive()">Archive product</button>
+        <button class="secondary" [disabled]="busy()" (click)="archive()">Archive product</button>
       }
     }
   } @else if (!busy()) {

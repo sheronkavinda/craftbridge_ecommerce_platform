@@ -21,10 +21,11 @@ interface ApplicationResponse {
   standalone: true,
   selector: 'app-seller-application',
   imports: [FormsModule, Header, RouterLink],
+  styleUrl: './seller-workspace.css',
   template: `
     <app-header />
-    <main class="min-h-screen bg-[#faf8f5] px-5 py-10 text-[#14213a]">
-      <section class="mx-auto max-w-2xl rounded-xl border border-stone-200 bg-white p-6 sm:p-8">
+    <main class="application">
+      <section class="application-card">
         <h1 class="mb-6 font-serif text-3xl font-bold">Seller application</h1>
 
         @if (message()) {
@@ -42,7 +43,7 @@ interface ApplicationResponse {
             <p class="mt-2">Your application is waiting for review.</p>
           }
           @if (item.status === 'approved') {
-            <a class="mt-4 inline-block rounded bg-[#a84727] px-5 py-2 text-white"
+            <a class="action"
                routerLink="/seller/dashboard">Manage my shop</a>
           }
           @if (item.decision_reason) {

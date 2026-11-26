@@ -1,69 +1,52 @@
 <app-header />
 <main>
-  <a routerLink="/seller/application">Seller application</a>
-  <h1>Seller dashboard</h1>
-  @if (error()) {
-    <p role="alert">{{ error() }}</p>
-  }
-  @if (message()) {
-    <p role="status">{{ message() }}</p>
-  }
-  @if (busy()) {
-    <p role="status">Working…</p>
-  }
+  <nav aria-label="Seller navigation">
+    <strong>Seller dashboard</strong>
+    <a routerLink="/seller/application">Seller application</a>
+    <a routerLink="/seller/orders">Fulfillment orders</a>
+  </nav>
+  @if (error()) { <p role="alert">{{ error() }}</p> }
+  @if (message()) { <p role="status">{{ message() }}</p> }
+  @if (busy()) { <p role="status">Working…</p> }
   @if (dash(); as d) {
-    <section>
-      <h2>{{ d.shop.name }}</h2>
-      <a [routerLink]="['/artisans', d.shop.slug]">View public shop</a> ·
-      <a routerLink="/seller/orders">Fulfillment orders</a>
-      <dl>
-        <div>
-          <dt>Products</dt>
-          <dd>{{ d.total_products }}</dd>
-        </div>
-        <div>
-          <dt>Published</dt>
-          <dd>{{ d.published_products }}</dd>
-        </div>
-        <div>
-          <dt>Drafts</dt>
-          <dd>{{ d.draft_products }}</dd>
-        </div>
-        <div>
-          <dt>Archived</dt>
-          <dd>{{ d.archived_products }}</dd>
-        </div>
-        <div>
-          <dt>Low stock products</dt>
-          <dd>{{ d.low_stock_products }}</dd>
-        </div>
-        <div>
-          <dt>Available units</dt>
-          <dd>{{ d.available_units }}</dd>
-        </div>
-      </dl>
-    </section>
-    <section>
-      <h2>Products</h2>
-      <a class="action" routerLink="/seller/products/new">Create product</a>
+    <header class="mast">
+      <div class="identity">
+        @if (d.shop.profile_image_url) {
+          <img class="avatar" [src]="api.media(d.shop.profile_image_url)" alt="" />
+        }
+        <h1>{{ d.shop.name }}</h1>
+        <a class="public" [routerLink]="['/artisans', d.shop.slug]">View public shop <span aria-hidden="true">↗</span></a>
+      </div>
+      <img class="banner" [src]="d.shop.banner_image_url ? api.media(d.shop.banner_image_url) : '/images/hero-craftbridge.jpg'" alt="" />
+    </header>
+    <dl class="numbers">
+      <div><dt>Products</dt><dd>{{ d.total_products }}</dd></div>
+      <div><dt>Available units</dt><dd>{{ d.available_units }}</dd></div>
+      <div><dt>Published</dt><dd>{{ d.published_products }}</dd></div>
+      <div><dt>Drafts</dt><dd>{{ d.draft_products }}</dd></div>
+      <div><dt>Archived</dt><dd>{{ d.archived_products }}</dd></div>
+      <div><dt>Low stock products</dt><dd>{{ d.low_stock_products }}</dd></div>
+    </dl>
+    <section class="catalog">
+      <header><h2>Products</h2><a class="action" routerLink="/seller/products/new"><span aria-hidden="true">＋</span> Create product</a></header>
       @for (p of products(); track p.id) {
         <article>
-          <a [routerLink]="['/seller/products', p.id]">{{ p.title }}</a
-          ><span
-            >{{ p.status }} · {{ p.currency }} {{ p.price_cents / 100 | number: '1.2-2' }} ·
-            {{ p.available_qty }} available
-            @if (p.status === 'published' && p.available_qty <= 5) {
-              · Low stock
-            }
+          @defer (on viewport) {
+            <seller-thumbnail [productId]="p.id" />
+          } @placeholder { <span class="placeholder"></span> }
+          <div class="product"><a [routerLink]="['/seller/products', p.id]">{{ p.title }}</a>
+            <small>{{ p.currency }} {{ p.price_cents / 100 | number: '1.2-2' }}</small>
+          </div>
+          <span class="pill" [class.live]="p.status === 'published'">{{ p.status }}</span>
+          <span class="qty">{{ p.available_qty }} available
+            @if (p.status === 'published' && p.available_qty <= 5) { <small>Low stock</small> }
           </span>
         </article>
-      } @empty {
-        <p>Your shop has no products yet.</p>
-      }
+      } @empty { <p>Your shop has no products yet.</p> }
     </section>
-    <section>
-      <h2>Shop profile</h2>
-      <form #profile="ngForm" (ngSubmit)="save()">
+    <details>
+      <summary>Shop profile</summary>
+      <div class="settings"><form #profile="ngForm" (ngSubmit)="save()">
         <fieldset [disabled]="busy()">
           <label
             >Shop name<input name="name" required minlength="3" maxlength="120" [(ngModel)]="name"
@@ -99,8 +82,7 @@
             (change)="upload(kind === 'profile' ? 'profile' : 'banner', file)"
         /></label>
       }
-    </section>
-  } @else if (!busy()) {
-    <button (click)="load()">Retry</button>
-  }
+</div>
+    </details>
+  } @else if (!busy()) { <button (click)="load()">Retry</button> }
 </main>
