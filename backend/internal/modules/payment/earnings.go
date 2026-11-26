@@ -2,7 +2,6 @@ package payment
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -251,8 +250,8 @@ func (s *Service) GetSellerEarnings(
 		}, nil
 }
 
-// ResolveSellerID maps an acting user ID (from X-Actor-ID / JWT sub) to sellers.id via sellers.user_id,
-// falling back to the actor ID itself if no sellers record matches.
+// ResolveSellerID maps an acting user ID (from JWT sub) to shops.owner_user_id::text,
+// falling back to the actor ID itself if no shop record matches.
 func (r *Repository) ResolveSellerID(ctx context.Context, actorID string) (string, error) {
 	trimmed := strings.TrimSpace(actorID)
 	if trimmed == "" {
@@ -260,10 +259,10 @@ func (r *Repository) ResolveSellerID(ctx context.Context, actorID string) (strin
 	}
 
 	const query = `
-		SELECT s.id::text
-		FROM sellers s
-		WHERE s.user_id::text = $1 OR s.id::text = $1
-		ORDER BY CASE WHEN s.user_id::text = $1 THEN 0 ELSE 1 END
+		SELECT sh.owner_user_id::text
+		FROM shops sh
+		WHERE sh.owner_user_id::text = $1 OR sh.id::text = $1
+		ORDER BY CASE WHEN sh.owner_user_id::text = $1 THEN 0 ELSE 1 END
 		LIMIT 1
 	`
 
@@ -280,15 +279,32 @@ func (r *Repository) ResolveSellerID(ctx context.Context, actorID string) (strin
 	return resolved, nil
 }
 
-// ListSellerPaidOrders returns one row per order belonging to sellerID that has a verified SUCCESS payment attempt.
-// Unpaid, PENDING, FAILED, EXPIRED, or CANCELLED payment attempts are never included.
+// ListSellerPaidOrders returns one row per seller_order belonging to sellerID's shops whose parent
+// order has a verified SUCCESS payment attempt. Unpaid, PENDING, FAILED, EXPIRED, or CANCELLED
+// payment attempts are never included.
+//
+// Gross is the seller_order's subtotal_cents (commission applies to subtotal_cents) and shipping_cents
+// is that seller_order's shipping_cents, matching net = merchandise + shipping - commission - refunds.
+// Completed refunds are subtracted only when refunds.seller_id matches sellerID, or when refunds.seller_id
+// is empty and the parent order has a single seller_order.
 func (r *Repository) ListSellerPaidOrders(ctx context.Context, sellerID string) ([]SellerPaidOrderRow, error) {
 	const query = `
 		SELECT
-			o.id::text,
-			to_jsonb(o) AS order_json,
+			o.id::text AS order_id,
+			COALESCE(
+				(
+					SELECT CASE
+						WHEN COUNT(*) <= 1 THEN COALESCE(MAX(oi.product_title_snapshot), '')
+						ELSE MIN(oi.product_title_snapshot) || ' +' || (COUNT(*) - 1)::text || ' more'
+					END
+					FROM order_items oi
+					WHERE oi.seller_order_id = so.id
+				),
+				''
+			) AS product_title,
 			pa.id::text AS attempt_id,
-			pa.amount_cents,
+			so.subtotal_cents,
+			so.shipping_cents,
 			COALESCE(NULLIF(UPPER(pa.currency), ''), 'USD') AS currency,
 			COALESCE(pa.completed_at, pa.updated_at, pa.created_at) AS paid_at,
 			COALESCE(
@@ -297,14 +313,22 @@ func (r *Repository) ListSellerPaidOrders(ctx context.Context, sellerID string) 
 					FROM refunds rf
 					WHERE rf.order_id::text = o.id::text
 					  AND rf.status = 'COMPLETED'
+					  AND (
+						  rf.seller_id::text = $1
+						  OR (
+							  (rf.seller_id IS NULL OR BTRIM(rf.seller_id) = '')
+							  AND (SELECT COUNT(*) FROM seller_orders so2 WHERE so2.order_id = o.id) = 1
+						  )
+					  )
 				),
 				0
 			)::bigint AS completed_refunds
-		FROM orders o
+		FROM seller_orders so
+		JOIN shops sh ON sh.id = so.shop_id
+		JOIN orders o ON o.id = so.order_id
 		JOIN LATERAL (
 			SELECT
 				id,
-				amount_cents,
 				currency,
 				completed_at,
 				updated_at,
@@ -315,8 +339,8 @@ func (r *Repository) ListSellerPaidOrders(ctx context.Context, sellerID string) 
 			ORDER BY p.completed_at DESC NULLS LAST, p.created_at DESC
 			LIMIT 1
 		) pa ON TRUE
-		WHERE COALESCE(to_jsonb(o)->>'seller_id', '') = $1
-		ORDER BY COALESCE(pa.completed_at, pa.updated_at, pa.created_at) DESC, o.id::text DESC
+		WHERE sh.owner_user_id::text = $1
+		ORDER BY COALESCE(pa.completed_at, pa.updated_at, pa.created_at) DESC, o.id DESC, so.id DESC
 	`
 
 	rows, err := r.querier(ctx).Query(ctx, query, sellerID)
@@ -330,18 +354,20 @@ func (r *Repository) ListSellerPaidOrders(ctx context.Context, sellerID string) 
 	for rows.Next() {
 		var (
 			orderID          string
-			rawOrderJSON     []byte
+			productTitle     string
 			attemptID        string
-			paidAmountCents  int64
+			merchandiseCents int64
+			shippingCents    int64
 			currency         string
 			paidAt           time.Time
 			completedRefunds int64
 		)
 		if scanErr := rows.Scan(
 			&orderID,
-			&rawOrderJSON,
+			&productTitle,
 			&attemptID,
-			&paidAmountCents,
+			&merchandiseCents,
+			&shippingCents,
 			&currency,
 			&paidAt,
 			&completedRefunds,
@@ -349,27 +375,9 @@ func (r *Repository) ListSellerPaidOrders(ctx context.Context, sellerID string) 
 			return nil, fmt.Errorf("failed to scan seller paid order row: %w", scanErr)
 		}
 
-		var fields map[string]any
-		if len(rawOrderJSON) > 0 {
-			_ = json.Unmarshal(rawOrderJSON, &fields)
-		}
-
-		orderNumber := extractStringField(fields, "order_number", "number")
-		if orderNumber == "" {
-			orderNumber = orderID
-		}
-
-		productTitle := extractStringField(fields, "product_title", "item_title", "title")
-		shippingCents := extractShippingCents(fields)
-		merchandiseCents := paidAmountCents - shippingCents
-		if merchandiseCents < 0 {
-			merchandiseCents = paidAmountCents
-			shippingCents = 0
-		}
-
 		result = append(result, SellerPaidOrderRow{
 			OrderID:          orderID,
-			OrderNumber:      orderNumber,
+			OrderNumber:      orderID,
 			ProductTitle:     productTitle,
 			PaidAt:           paidAt,
 			MerchandiseCents: merchandiseCents,
@@ -428,24 +436,4 @@ func (r *Repository) ListSellerPayouts(ctx context.Context, sellerID string) ([]
 	}
 
 	return payouts, totalPaidCents, nil
-}
-
-func extractShippingCents(fields map[string]any) int64 {
-	for _, k := range []string{"shipping_cents", "delivery_cents"} {
-		if raw, ok := fields[k]; ok && raw != nil {
-			if cents, ok := toInt64(raw); ok && cents >= 0 {
-				return cents
-			}
-		}
-	}
-	for _, k := range []string{"shipping_amount", "shipping", "delivery_fee"} {
-		if raw, ok := fields[k]; ok && raw != nil {
-			if dec, ok := toFloat64(raw); ok && dec >= 0 {
-				if cents, err := ParseDecimalToCents(fmt.Sprintf("%.2f", dec)); err == nil {
-					return cents
-				}
-			}
-		}
-	}
-	return 0
 }

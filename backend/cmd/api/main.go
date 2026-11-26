@@ -16,6 +16,7 @@ import (
 	"craftbridge/backend/internal/modules/auth"
 	"craftbridge/backend/internal/modules/catalog"
 	"craftbridge/backend/internal/modules/m04"
+	"craftbridge/backend/internal/modules/order"
 	"craftbridge/backend/internal/modules/payment"
 	"craftbridge/backend/internal/modules/receipt"
 	"craftbridge/backend/internal/modules/refund"
@@ -28,6 +29,8 @@ import (
 	platformhttp "craftbridge/backend/internal/platform/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type paymentAuditAdapter struct {
@@ -221,13 +224,72 @@ func (r *receiptPaymentReaderAdapter) GetVerifiedPaymentForOrder(
 	}, nil
 }
 
-type receiptOrderSummaryAdapter struct{}
+type receiptOrderSummaryAdapter struct {
+	db *pgxpool.Pool
+}
 
-func (receiptOrderSummaryAdapter) GetOrderSummary(_ context.Context, _ string) (receipt.OrderSummary, error) {
-	// With the current placeholder orders schema (which has no order_items table yet),
-	// return an empty items slice without inventing line items.
+func (a *receiptOrderSummaryAdapter) GetOrderSummary(ctx context.Context, orderID string) (receipt.OrderSummary, error) {
+	if a == nil || a.db == nil {
+		return receipt.OrderSummary{Items: []receipt.ReceiptLineItem{}}, nil
+	}
+
+	var subtotalCents, shippingCents int64
+	err := a.db.QueryRow(ctx, `
+		SELECT subtotal_cents, shipping_total_cents
+		FROM orders
+		WHERE id::text = $1
+	`, orderID).Scan(&subtotalCents, &shippingCents)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return receipt.OrderSummary{Items: []receipt.ReceiptLineItem{}}, nil
+		}
+		return receipt.OrderSummary{}, err
+	}
+
+	rows, err := a.db.Query(ctx, `
+		SELECT
+			oi.product_title_snapshot,
+			oi.quantity,
+			oi.unit_price_cents,
+			oi.line_total_cents
+		FROM order_items oi
+		JOIN seller_orders so ON so.id = oi.seller_order_id
+		WHERE so.order_id::text = $1
+		ORDER BY so.id ASC, oi.id ASC
+	`, orderID)
+	if err != nil {
+		return receipt.OrderSummary{}, err
+	}
+	defer rows.Close()
+
+	items := make([]receipt.ReceiptLineItem, 0)
+	for rows.Next() {
+		var (
+			title          string
+			quantity       int
+			unitPriceCents int64
+			lineTotalCents int64
+		)
+		if scanErr := rows.Scan(&title, &quantity, &unitPriceCents, &lineTotalCents); scanErr != nil {
+			return receipt.OrderSummary{}, scanErr
+		}
+		items = append(items, receipt.ReceiptLineItem{
+			Title:          title,
+			Quantity:       quantity,
+			UnitPriceCents: unitPriceCents,
+			UnitPrice:      receipt.FormatCentsDecimal(unitPriceCents),
+			LineTotalCents: lineTotalCents,
+			LineTotal:      receipt.FormatCentsDecimal(lineTotalCents),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return receipt.OrderSummary{}, err
+	}
+
 	return receipt.OrderSummary{
-		Items: []receipt.ReceiptLineItem{},
+		Items:         items,
+		SubtotalCents: &subtotalCents,
+		ShippingCents: &shippingCents,
 	}, nil
 }
 
@@ -299,7 +361,7 @@ func main() {
 	receiptService := receipt.NewService(
 		receiptRepo,
 		&receiptPaymentReaderAdapter{paymentRepo: paymentRepo},
-		receiptOrderSummaryAdapter{},
+		&receiptOrderSummaryAdapter{db: dbPool},
 	)
 	receiptHandler := receipt.NewHandler(receiptService)
 
@@ -323,9 +385,11 @@ func main() {
 			admin.RegisterRoutes(v1, adminHandler)
 
 			authenticate := platformhttp.RequireAuthenticatedUser()
-			if _, err := m04.Register(ctx, v1, dbPool, authenticate, catalogService); err != nil {
+			orderSvc, err := m04.Register(ctx, v1, dbPool, authenticate, catalogService)
+			if err != nil {
 				log.Fatalf("register cart, checkout and shipping routes: %v", err)
 			}
+			paymentService.SetNotifier(payment.NewOrderServiceNotifier(dbPool, orderSvc, order.ErrInvalidTransition))
 
 			seller.RegisterRoutes(v1, sellerHandler, authenticate)
 			seller.RegisterShopMediaRoutes(v1, shopMediaHandler, authenticate)

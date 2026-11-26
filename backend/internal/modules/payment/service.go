@@ -207,10 +207,19 @@ func (s *Service) InitiatePayment(ctx context.Context, actor Actor, orderID stri
 		return nil, ErrOrderNotFound
 	}
 
-	// Order status must be PENDING or PENDING_PAYMENT.
+	now := s.nowFn()
+
+	// Order must be awaiting payment (status pending_payment/pending, payment_status pending when set, and not expired).
 	normalizedStatus := strings.ToUpper(strings.TrimSpace(order.Status))
 	if normalizedStatus != "PENDING" && normalizedStatus != "PENDING_PAYMENT" {
 		return nil, fmt.Errorf("%w: current order status is %s", ErrOrderNotPayable, normalizedStatus)
+	}
+	normalizedPayStatus := strings.ToUpper(strings.TrimSpace(order.PaymentStatus))
+	if normalizedPayStatus != "" && normalizedPayStatus != "PENDING" {
+		return nil, fmt.Errorf("%w: current payment status is %s", ErrOrderNotPayable, normalizedPayStatus)
+	}
+	if order.ExpiresAt != nil && !now.Before(*order.ExpiresAt) {
+		return nil, fmt.Errorf("%w: order payment window has expired", ErrOrderNotPayable)
 	}
 
 	if order.AmountCents <= 0 {
@@ -225,7 +234,6 @@ func (s *Service) InitiatePayment(ctx context.Context, actor Actor, orderID stri
 	firstName, lastName := splitFullName(firstNonEmpty(order.BuyerName, actor.Name))
 	buyerEmail := firstNonEmpty(order.BuyerEmail, "buyer@craftbridge.local")
 
-	now := s.nowFn()
 	existing, err := s.repo.GetLatestPendingAttemptByOrder(ctx, order.OrderID)
 	if err != nil {
 		return nil, err

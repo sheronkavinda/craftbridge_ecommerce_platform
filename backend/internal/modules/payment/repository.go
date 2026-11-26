@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -89,47 +87,66 @@ func (r *Repository) RunInTx(ctx context.Context, fn func(txCtx context.Context)
 	return nil
 }
 
-// GetOrderForPayment loads an order's payment-relevant fields from the orders table.
-// Because Member 04 owns the orders schema (migration 030) while local_dev_bootstrap.sql defines
-// a minimal placeholder orders table, this query inspects to_jsonb(o) so it works seamlessly with both
-// full orders schemas (user_id/buyer_id, total_cents/total_amount/amount, currency, status, order_number)
-// and the local bootstrap schema.
+// GetOrderForPayment loads an order's payment-relevant fields from Member 04's orders table
+// (and buyer metadata from users).
+//
+// Multi-seller SellerID rule:
+//   - If the order has exactly one seller_order, SellerID is set to that shop's owner_user_id::text
+//     so single-seller refunds can attribute the refund to that seller.
+//   - If the order has 0 or >1 seller_orders (a multi-seller basket), SellerID is left empty ("")
+//     so refunds do not misattribute a multi-seller order to a single seller.
 func (r *Repository) GetOrderForPayment(ctx context.Context, orderID string) (OrderForPayment, error) {
 	const query = `
 		SELECT
 			o.id::text,
-			to_jsonb(o) AS order_json,
-			COALESCE(
-				(SELECT p.amount::float8 FROM payments p WHERE p.order_id::text = o.id::text ORDER BY p.created_at DESC LIMIT 1),
-				0
-			) AS legacy_payment_amount,
-			COALESCE(
-				(SELECT p.status FROM payments p WHERE p.order_id::text = o.id::text ORDER BY p.created_at DESC LIMIT 1),
-				''
-			) AS legacy_payment_status,
-			COALESCE(
-				(SELECT u.id::text FROM users u WHERE UPPER(u.role) = 'BUYER' ORDER BY u.created_at ASC LIMIT 1),
-				'buyer-001'
-			) AS fallback_buyer_id
+			o.buyer_id::text,
+			o.grand_total_cents,
+			UPPER(TRIM(o.currency)),
+			o.status,
+			o.payment_status,
+			o.expires_at,
+			COALESCE(u.name, ''),
+			COALESCE(u.email, ''),
+			CASE
+				WHEN (SELECT COUNT(*) FROM seller_orders so WHERE so.order_id = o.id) = 1
+				THEN COALESCE((
+					SELECT sh.owner_user_id::text
+					FROM seller_orders so
+					JOIN shops sh ON sh.id = so.shop_id
+					WHERE so.order_id = o.id
+					LIMIT 1
+				), '')
+				ELSE ''
+			END AS seller_id
 		FROM orders o
+		LEFT JOIN users u ON u.id = o.buyer_id
 		WHERE o.id::text = $1
 	`
 
 	var (
-		resolvedID          string
-		rawJSON             []byte
-		legacyPaymentAmount float64
-		legacyPaymentStatus string
-		fallbackBuyerID     string
+		resolvedID    string
+		buyerID       string
+		amountCents   int64
+		currency      string
+		status        string
+		paymentStatus string
+		expiresAt     time.Time
+		buyerName     string
+		buyerEmail    string
+		sellerID      string
 	)
 
-	q := r.querier(ctx)
-	err := q.QueryRow(ctx, query, orderID).Scan(
+	err := r.querier(ctx).QueryRow(ctx, query, orderID).Scan(
 		&resolvedID,
-		&rawJSON,
-		&legacyPaymentAmount,
-		&legacyPaymentStatus,
-		&fallbackBuyerID,
+		&buyerID,
+		&amountCents,
+		&currency,
+		&status,
+		&paymentStatus,
+		&expiresAt,
+		&buyerName,
+		&buyerEmail,
+		&sellerID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -139,62 +156,24 @@ func (r *Repository) GetOrderForPayment(ctx context.Context, orderID string) (Or
 		return OrderForPayment{}, fmt.Errorf("failed to query order for payment: %w", err)
 	}
 
-	var fields map[string]any
-	if len(rawJSON) > 0 {
-		_ = json.Unmarshal(rawJSON, &fields)
-	}
-
-	userID := extractStringField(fields, "user_id", "buyer_id", "customer_id")
-	if userID == "" {
-		userID = fallbackBuyerID
-	}
-
-	orderNumber := extractStringField(fields, "order_number", "number")
-	if orderNumber == "" {
-		orderNumber = resolvedID
-	}
-
-	currency := strings.ToUpper(extractStringField(fields, "currency"))
 	if currency == "" {
 		currency = "USD"
 	}
 
-	status := strings.ToUpper(extractStringField(fields, "status", "payment_status"))
-	if status == "" {
-		if legacyPaymentStatus != "" {
-			status = strings.ToUpper(strings.TrimSpace(legacyPaymentStatus))
-		} else {
-			status = "PENDING"
-		}
-	}
-
-	amountCents := extractAmountCents(fields, legacyPaymentAmount)
-	sellerID := extractStringField(fields, "seller_id")
-
-	order := OrderForPayment{
-		OrderID:     resolvedID,
-		OrderNumber: orderNumber,
-		UserID:      userID,
-		SellerID:    sellerID,
-		AmountCents: amountCents,
-		Currency:    currency,
-		Status:      status,
-	}
-
-	if userID != "" {
-		var buyerName, buyerEmail string
-		userErr := q.QueryRow(
-			ctx,
-			`SELECT COALESCE(name, ''), COALESCE(email, '') FROM users WHERE id::text = $1`,
-			userID,
-		).Scan(&buyerName, &buyerEmail)
-		if userErr == nil {
-			order.BuyerName = buyerName
-			order.BuyerEmail = buyerEmail
-		}
-	}
-
-	return order, nil
+	expiresAtCopy := expiresAt
+	return OrderForPayment{
+		OrderID:       resolvedID,
+		OrderNumber:   resolvedID,
+		UserID:        buyerID,
+		SellerID:      sellerID,
+		AmountCents:   amountCents,
+		Currency:      currency,
+		Status:        strings.ToUpper(strings.TrimSpace(status)),
+		PaymentStatus: strings.ToUpper(strings.TrimSpace(paymentStatus)),
+		ExpiresAt:     &expiresAtCopy,
+		BuyerName:     buyerName,
+		BuyerEmail:    buyerEmail,
+	}, nil
 }
 
 // GetAttemptByID loads a single payment_attempts record by its ID.
@@ -729,71 +708,4 @@ func (r *Repository) MarkEventProcessed(ctx context.Context, provider, providerE
 		return fmt.Errorf("failed to mark payment event processed: %w", err)
 	}
 	return nil
-}
-
-func extractStringField(fields map[string]any, keys ...string) string {
-	for _, k := range keys {
-		if raw, ok := fields[k]; ok && raw != nil {
-			switch v := raw.(type) {
-			case string:
-				if trimmed := strings.TrimSpace(v); trimmed != "" {
-					return trimmed
-				}
-			}
-		}
-	}
-	return ""
-}
-
-func extractAmountCents(fields map[string]any, fallbackDecimalAmount float64) int64 {
-	for _, centKey := range []string{"total_cents", "amount_cents", "grand_total_cents"} {
-		if raw, ok := fields[centKey]; ok && raw != nil {
-			if cents, ok := toInt64(raw); ok && cents > 0 {
-				return cents
-			}
-		}
-	}
-	for _, decKey := range []string{"total_amount", "amount", "total", "grand_total"} {
-		if raw, ok := fields[decKey]; ok && raw != nil {
-			if dec, ok := toFloat64(raw); ok && dec > 0 {
-				return int64(math.Round(dec * 100))
-			}
-		}
-	}
-	if fallbackDecimalAmount > 0 {
-		return int64(math.Round(fallbackDecimalAmount * 100))
-	}
-	return 0
-}
-
-func toInt64(v any) (int64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return int64(math.Round(val)), true
-	case int64:
-		return val, true
-	case int:
-		return int64(val), true
-	case string:
-		if parsed, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
-			return parsed, true
-		}
-	}
-	return 0, false
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case int64:
-		return float64(val), true
-	case int:
-		return float64(val), true
-	case string:
-		if parsed, err := strconv.ParseFloat(strings.TrimSpace(val), 64); err == nil {
-			return parsed, true
-		}
-	}
-	return 0, false
 }
