@@ -3,6 +3,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { of, throwError } from 'rxjs';
 import { ReceiptView } from '../payments.models';
 import { PaymentsApiError, PaymentsApiService } from '../payments-api.service';
+import { AccountApiService } from '../../account/account-api.service';
 import { FILE_SAVER, PRINT } from '../shared/browser-actions.tokens';
 import { ReceiptComponent } from './receipt.component';
 
@@ -43,6 +44,13 @@ describe('ReceiptComponent', () => {
       providers: [
         provideRouter([]),
         { provide: PaymentsApiService, useValue: mockPaymentsApi },
+        {
+          provide: AccountApiService,
+          useValue: {
+            me: () =>
+              of({ id: 1, name: 'Nimali Perera', email: 'nimali@example.com', roles: ['buyer'] }),
+          },
+        },
         { provide: FILE_SAVER, useValue: fileSaverSpy },
         { provide: PRINT, useValue: printSpy },
         {

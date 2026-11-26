@@ -115,8 +115,10 @@
         <div class="flex items-center gap-3 px-1 pb-4 border-b border-line">
           <span class="inline-flex w-11 h-11 shrink-0 items-center justify-center rounded-full bg-cream-100 text-navy font-bold" aria-hidden="true">{{ initials() }}</span>
           <div class="min-w-0">
-            <div class="text-sm font-semibold text-ink truncate" data-testid="account-user-name">{{ userName }}</div>
-            <div class="text-xs text-ink-secondary truncate" data-testid="account-user-email">{{ userEmail }}</div>
+            <div class="text-sm font-semibold text-ink truncate" data-testid="account-user-name">{{ userName() }}</div>
+            @if (userEmail()) {
+              <div class="text-xs text-ink-secondary truncate" data-testid="account-user-email">{{ userEmail() }}</div>
+            }
           </div>
         </div>
 

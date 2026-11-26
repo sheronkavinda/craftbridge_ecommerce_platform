@@ -1,20 +1,41 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { of, throwError } from 'rxjs';
+import { AccountApiService } from '../../../account/account-api.service';
 import { AccountShellComponent } from './account-shell.component';
 
 describe('AccountShellComponent', () => {
   let fixture: ComponentFixture<AccountShellComponent>;
+  let mockAccountApi: jasmine.SpyObj<AccountApiService>;
 
   beforeEach(async () => {
+    localStorage.clear();
+    mockAccountApi = jasmine.createSpyObj<AccountApiService>('AccountApiService', ['me']);
+    mockAccountApi.me.and.returnValue(
+      of({
+        id: 101,
+        name: 'Nimali Perera',
+        email: 'nimali@example.com',
+        roles: ['buyer'],
+      }),
+    );
+
     await TestBed.configureTestingModule({
       imports: [AccountShellComponent],
-      providers: [provideRouter([])],
+      providers: [
+        provideRouter([]),
+        { provide: AccountApiService, useValue: mockAccountApi },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AccountShellComponent);
   });
 
-  it('renders the navy top bar and buyer actor name, email, and initials in the sidebar', () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('renders the navy top bar and real user name, email, and initials from profile in the sidebar', () => {
     fixture.detectChanges();
 
     const nameEl = fixture.nativeElement.querySelector(
@@ -24,10 +45,30 @@ describe('AccountShellComponent', () => {
       '[data-testid="account-user-email"]',
     ) as HTMLElement;
 
-    expect(nameEl?.textContent?.trim()).toBe('Ruwan Fernando');
-    expect(emailEl?.textContent?.trim()).toBe('ruwan@craftbridge.test');
-    expect(fixture.componentInstance.initials()).toBe('RF');
+    expect(nameEl?.textContent?.trim()).toBe('Nimali Perera');
+    expect(nameEl?.textContent).not.toContain('Ruwan Fernando');
+    expect(emailEl?.textContent?.trim()).toBe('nimali@example.com');
+    expect(fixture.componentInstance.initials()).toBe('NP');
     expect(fixture.nativeElement.textContent).toContain('Global Handmade Marketplace');
+  });
+
+  it('falls back to localStorage user_name and hides email when profile lookup fails', () => {
+    localStorage.setItem('user_name', 'Saman Kumara');
+    mockAccountApi.me.and.returnValue(throwError(() => new Error('network error')));
+
+    const fallbackFixture = TestBed.createComponent(AccountShellComponent);
+    fallbackFixture.detectChanges();
+
+    const nameEl = fallbackFixture.nativeElement.querySelector(
+      '[data-testid="account-user-name"]',
+    ) as HTMLElement;
+    const emailEl = fallbackFixture.nativeElement.querySelector(
+      '[data-testid="account-user-email"]',
+    );
+
+    expect(nameEl?.textContent?.trim()).toBe('Saman Kumara');
+    expect(emailEl).toBeNull();
+    expect(fallbackFixture.componentInstance.initials()).toBe('SK');
   });
 
   it('renders all six account navigation items plus Sign Out and marks the activeItem with aria-current="page"', () => {

@@ -3,6 +3,7 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { of, throwError } from 'rxjs';
 import { BuyerPayment } from '../payments.models';
 import { PaymentsApiError, PaymentsApiService } from '../payments-api.service';
+import { AccountApiService } from '../../account/account-api.service';
 import { PaymentHistoryComponent } from './payment-history.component';
 
 describe('PaymentHistoryComponent', () => {
@@ -56,6 +57,13 @@ describe('PaymentHistoryComponent', () => {
       providers: [
         provideRouter([]),
         { provide: PaymentsApiService, useValue: mockPaymentsApi },
+        {
+          provide: AccountApiService,
+          useValue: {
+            me: () =>
+              of({ id: 1, name: 'Nimali Perera', email: 'nimali@example.com', roles: ['buyer'] }),
+          },
+        },
         {
           provide: ActivatedRoute,
           useValue: {

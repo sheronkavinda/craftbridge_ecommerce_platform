@@ -1,7 +1,7 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { BUYER_DEV_ACTOR } from '../../../../core/auth/dev-actors';
+import { AccountApiService } from '../../../account/account-api.service';
 import { buildInitials } from '../payment-labels';
 
 export type AccountNavItemId =
@@ -30,14 +30,40 @@ interface AccountNavItem {
   styleUrl: './account-shell.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AccountShellComponent {
+export class AccountShellComponent implements OnInit {
+  private readonly accountApi = inject(AccountApiService);
+
   readonly activeItem = input<AccountNavItemId | null>(null);
   readonly showShippingInfo = input<boolean>(false);
 
-  // DEV ONLY - identity comes from the dev buyer actor until Member 01's auth exists.
-  readonly userName = BUYER_DEV_ACTOR.name;
-  readonly userEmail = BUYER_DEV_ACTOR.email;
-  readonly initials = computed(() => buildInitials(this.userName));
+  readonly userName = signal<string>(this.readStoredUserName() || 'My Account');
+  readonly userEmail = signal<string>('');
+  readonly initials = computed(() => buildInitials(this.userName()));
+
+  ngOnInit(): void {
+    this.accountApi.me().subscribe({
+      next: (user) => {
+        const name = user.name?.trim();
+        if (name) {
+          this.userName.set(name);
+        }
+        const email = user.email?.trim();
+        if (email) {
+          this.userEmail.set(email);
+        }
+      },
+      error: () => {
+        // Keep localStorage user_name fallback when profile lookup fails.
+      },
+    });
+  }
+
+  private readStoredUserName(): string {
+    if (typeof localStorage === 'undefined') {
+      return '';
+    }
+    return (localStorage.getItem('user_name') ?? '').trim();
+  }
 
   readonly navItems: AccountNavItem[] = [
     // TODO(member-04): /orders is owned by Member 04's buyer orders page.
