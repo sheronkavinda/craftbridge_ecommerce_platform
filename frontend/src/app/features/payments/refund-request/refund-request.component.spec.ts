@@ -3,6 +3,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { of, throwError } from 'rxjs';
 import { BuyerPayment, BuyerRefund } from '../payments.models';
 import { PaymentsApiError, PaymentsApiService } from '../payments-api.service';
+import { AccountApiService } from '../../account/account-api.service';
 import {
   RefundRequestComponent,
   parseRefundDecimalToCents,
@@ -87,6 +88,13 @@ describe('RefundRequestComponent', () => {
       providers: [
         provideRouter([]),
         { provide: PaymentsApiService, useValue: mockPaymentsApi },
+        {
+          provide: AccountApiService,
+          useValue: {
+            me: () =>
+              of({ id: 1, name: 'Nimali Perera', email: 'nimali@example.com', roles: ['buyer'] }),
+          },
+        },
         {
           provide: ActivatedRoute,
           useValue: {

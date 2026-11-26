@@ -34,6 +34,10 @@ declare module '@playwright/test' {
   }
 
   export interface Page {
+    addInitScript<Arg = void>(
+      script: ((arg: Arg) => unknown) | string,
+      arg?: Arg,
+    ): Promise<void>;
     goto(url: string): Promise<unknown>;
     route(
       url: string | RegExp,

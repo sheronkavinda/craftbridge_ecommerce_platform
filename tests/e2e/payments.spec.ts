@@ -3,6 +3,28 @@ import { expect, test } from '@playwright/test';
 const API_BASE = '**/api/v1';
 
 test.describe('Member 05 — Payments, Refunds & Receipts E2E', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('access_token', 'e2e-buyer-token');
+      localStorage.setItem('user_id', '42');
+      localStorage.setItem('user_name', 'Nimali Perera');
+      localStorage.setItem('user_role', 'buyer');
+    });
+
+    await page.route(`${API_BASE}/auth/me`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        json: {
+          id: 42,
+          name: 'Nimali Perera',
+          email: 'nimali@example.com',
+          roles: ['buyer'],
+        },
+      });
+    });
+  });
+
   test('Payment redirect page (/payments/redirect/order-005): renders checkout details and builds hidden PayHere POST form with action, merchant_id, and hash', async ({
     page,
   }) => {
@@ -377,6 +399,26 @@ test.describe('Member 05 — Payments, Refunds & Receipts E2E', () => {
   test('Seller earnings page (/payments/seller-earnings): renders Pending/Available/Paid cards, transaction breakdown, and empty payout history message', async ({
     page,
   }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('access_token', 'e2e-seller-token');
+      localStorage.setItem('user_id', '77');
+      localStorage.setItem('user_name', 'Amaya Crafts');
+      localStorage.setItem('user_role', 'seller');
+    });
+
+    await page.route(`${API_BASE}/auth/me`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        json: {
+          id: 77,
+          name: 'Amaya Crafts',
+          email: 'amaya@example.com',
+          roles: ['seller'],
+        },
+      });
+    });
+
     await page.route(`${API_BASE}/seller/earnings*`, async (route) => {
       await route.fulfill({
         status: 200,
