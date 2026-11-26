@@ -5,13 +5,14 @@ import { RouterLink } from '@angular/router';
 import { firstValueFrom, forkJoin } from 'rxjs';
 import { Header } from '../../shared/components/header/header';
 import { SellerApi, errorText } from './seller-api.service';
+import { SellerThumbnail } from './seller-thumbnail';
 import { Dashboard, Product, Shop } from './seller.models';
 
 @Component({
   standalone: true,
-  imports: [Header, RouterLink, FormsModule, DecimalPipe],
+  imports: [Header, RouterLink, FormsModule, DecimalPipe, SellerThumbnail],
   templateUrl: './seller-dashboard.html',
-  styleUrl: './seller-workspace.css',
+  styleUrl: './seller-dashboard.css',
 })
 export class SellerDashboard implements OnInit {
   readonly api = inject(SellerApi);

@@ -91,6 +91,7 @@ test('approved seller manages profile, products, stock and media', async ({
   const shop = (await decision.json()).shop;
   await page.reload();
   await page.getByRole('link', { name: 'Manage my shop' }).click();
+  await page.getByText('Shop profile', { exact: true }).click();
   await page.getByLabel('Contact email').fill(email);
   await page.getByRole('button', { name: 'Save shop profile' }).click();
   await expect(page.getByText('Shop profile saved.')).toBeVisible();
