@@ -1,0 +1,139 @@
+<app-header />
+<main>
+  <a routerLink="/seller/dashboard">Back to seller dashboard</a>
+  <h1>{{ id ? 'Product editor' : 'Create a product' }}</h1>
+  @if (error()) {
+    <p role="alert">{{ error() }}</p>
+  }
+  @if (message()) {
+    <p role="status">{{ message() }}</p>
+  }
+  @if (busy()) {
+    <p role="status">Working…</p>
+  }
+  @if (ready()) {
+    <section>
+      <h2>Product details</h2>
+      <form #form="ngForm" (ngSubmit)="save()">
+        <fieldset [disabled]="busy() || item()?.status === 'archived'">
+          <label
+            >Title<input name="title" required minlength="3" maxlength="200" [(ngModel)]="title"
+          /></label>
+          <label
+            >Description<textarea
+              name="description"
+              required
+              maxlength="5000"
+              [(ngModel)]="description"
+            ></textarea>
+          </label>
+          <label
+            >Category<select required name="category" [(ngModel)]="category">
+              <option [ngValue]="null">Choose category</option>
+              @for (c of categories(); track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select></label
+          >
+          <label
+            >Price (USD)<input required name="price" inputmode="decimal" [(ngModel)]="price"
+          /></label>
+          @if (id) {
+            <label
+              >Visibility<select name="status" [(ngModel)]="status">
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+                @if (item()?.status === 'archived') {
+                  <option value="archived">Archived</option>
+                }
+              </select></label
+            >
+          } @else {
+            <label
+              >Opening stock<input
+                name="stock"
+                type="number"
+                step="1"
+                min="0"
+                max="2147483647"
+                required
+                [(ngModel)]="stock"
+            /></label>
+          }
+          <button [disabled]="form.invalid">{{ id ? 'Save product' : 'Create draft' }}</button>
+        </fieldset>
+      </form>
+    </section>
+    @if (item(); as p) {
+      <section>
+        <h2>Product images</h2>
+        @for (i of images(); track i.id) {
+          <figure>
+            <img [src]="api.media(i.image_url)" [alt]="i.alt_text || p.title" />
+            @if (p.status !== 'archived') {
+              <button [disabled]="busy()" (click)="remove(i)">Remove image</button>
+            }
+          </figure>
+        } @empty {
+          <p>No product images yet.</p>
+        }
+        @if (p.status !== 'archived') {
+          <fieldset [disabled]="busy() || images().length >= 8">
+            <label>Image description<input maxlength="250" [(ngModel)]="alt" /></label
+            ><label
+              >Image file<input #file type="file" accept="image/jpeg,image/png,image/webp" /></label
+            ><button (click)="upload(file)">Upload image</button>
+          </fieldset>
+          <small>Up to 8 JPEG, PNG or WebP images, 5 MB each.</small>
+        }
+      </section>
+      <section>
+        <h2>Inventory</h2>
+        <p>{{ p.available_qty }} available · {{ p.reserved_qty }} reserved</p>
+        @if (p.status !== 'archived') {
+          <form #adjustment="ngForm" (ngSubmit)="adjust()">
+            <fieldset [disabled]="busy()">
+              <label
+                >Quantity change<input
+                  type="number"
+                  step="1"
+                  name="delta"
+                  min="-100000"
+                  max="100000"
+                  required
+                  [(ngModel)]="delta"
+              /></label>
+              <label
+                >Reason<input
+                  required
+                  name="reason"
+                  minlength="3"
+                  maxlength="200"
+                  [(ngModel)]="reason"
+              /></label>
+              <button [disabled]="adjustment.invalid || !delta">Record stock adjustment</button>
+            </fieldset>
+          </form>
+        }
+        <h3>Recent movements</h3>
+        @for (m of history(); track m.id) {
+          <article>
+            <strong>{{ m.reason }}</strong
+            ><span>Available {{ m.available_delta }} · Reserved {{ m.reserved_delta }}</span
+            ><small
+              >{{ m.created_at | date: 'medium' }} ·
+              {{ m.actor_user_id ? 'User ' + m.actor_user_id : 'System' }}</small
+            >
+          </article>
+        } @empty {
+          <p>No stock movements yet.</p>
+        }
+      </section>
+      @if (p.status !== 'archived') {
+        <button [disabled]="busy()" (click)="archive()">Archive product</button>
+      }
+    }
+  } @else if (!busy()) {
+    <button (click)="load()">Retry</button>
+  }
+</main>

@@ -9,6 +9,7 @@ import (
 
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
+	CatalogUploadDir                string
 	Port                            string
 	AppEnv                          string
 	DBURL                           string
@@ -60,6 +61,7 @@ func Load() *Config {
 	}
 
 	return &Config{
+		CatalogUploadDir:                getEnv("CATALOG_UPLOAD_DIR", "uploads/catalog"),
 		Port:                            getEnv("PORT", "8080"),
 		AppEnv:                          getEnv("APP_ENV", "development"),
 		DBURL:                           getEnv("DB_URL", "postgres://postgres:postgres@localhost:5432/craftbridge?sslmode=disable"),

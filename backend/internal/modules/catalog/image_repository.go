@@ -108,6 +108,20 @@ func (r *Repository) ListPublicProductImages(
 	productID int64,
 ) ([]ProductImage, error) {
 
+	return r.listProductImages(ctx, productID, nil)
+}
+
+// ListOwnedProductImages includes unpublished images for the owning shop.
+func (r *Repository) ListOwnedProductImages(ctx context.Context, userID, productID int64) ([]ProductImage, error) {
+	if _, err := r.GetMyProduct(ctx, userID, productID); errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrProductNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	return r.listProductImages(ctx, productID, &userID)
+}
+
+func (r *Repository) listProductImages(ctx context.Context, productID int64, ownerID *int64) ([]ProductImage, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
 			pi.id,
@@ -121,11 +135,12 @@ func (r *Repository) ListPublicProductImages(
 		JOIN shops s ON s.id = p.shop_id
 		JOIN categories c ON c.id = p.category_id
 		WHERE p.id = $1
-		  AND p.status = 'published'
-		  AND s.status = 'active'
-		  AND c.is_active = TRUE
+		  AND (
+		    ($2::bigint IS NULL AND p.status = 'published' AND s.status = 'active' AND c.is_active)
+		    OR s.owner_user_id = $2
+		  )
 		ORDER BY pi.sort_order, pi.id
-	`, productID)
+	`, productID, ownerID)
 
 	if err != nil {
 		return nil, err

@@ -1,6 +1,7 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { environment } from '../../../environments/environment';
 import { Header } from '../../shared/components/header/header';
@@ -19,7 +20,7 @@ interface ApplicationResponse {
 @Component({
   standalone: true,
   selector: 'app-seller-application',
-  imports: [FormsModule, Header],
+  imports: [FormsModule, Header, RouterLink],
   template: `
     <app-header />
     <main class="min-h-screen bg-[#faf8f5] px-5 py-10 text-[#14213a]">
@@ -39,6 +40,10 @@ interface ApplicationResponse {
           <p class="mt-3">Application status: <strong>{{ item.status }}</strong></p>
           @if (item.status === 'pending') {
             <p class="mt-2">Your application is waiting for review.</p>
+          }
+          @if (item.status === 'approved') {
+            <a class="mt-4 inline-block rounded bg-[#a84727] px-5 py-2 text-white"
+               routerLink="/seller/dashboard">Manage my shop</a>
           }
           @if (item.decision_reason) {
             <p class="mt-2">Review note: {{ item.decision_reason }}</p>

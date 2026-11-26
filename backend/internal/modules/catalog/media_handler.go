@@ -211,6 +211,25 @@ func (h *ImageHandler) ListProductImages(c *gin.Context) {
 	})
 }
 
+func (h *ImageHandler) ListOwnedProductImages(c *gin.Context) {
+	userID, authenticated := catalogUserID(c)
+	if !authenticated {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
+	productID, valid := parseProductID(c)
+	if !valid {
+		catalogError(c, ErrInvalidProductInput)
+		return
+	}
+	images, err := h.repo.ListOwnedProductImages(c.Request.Context(), userID, productID)
+	if err != nil {
+		catalogError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": images})
+}
+
 // DELETE /api/v1/seller/product-images/:imageID
 func (h *ImageHandler) DeleteProductImage(c *gin.Context) {
 	userID, authenticated := catalogUserID(c)
@@ -281,6 +300,7 @@ func RegisterImageRoutes(
 
 	protected := api.Group("/seller")
 	protected.Use(authenticate)
+	protected.GET("/products/:id/images", handler.ListOwnedProductImages)
 
 	protected.POST(
 		"/products/:id/images",
