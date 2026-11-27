@@ -79,15 +79,17 @@ type Actor struct {
 
 // OrderForPayment holds the order fields needed to validate and initiate a payment attempt.
 type OrderForPayment struct {
-	OrderID     string
-	OrderNumber string
-	UserID      string
-	SellerID    string
-	AmountCents int64
-	Currency    string
-	Status      string
-	BuyerName   string
-	BuyerEmail  string
+	OrderID       string
+	OrderNumber   string
+	UserID        string
+	SellerID      string
+	AmountCents   int64
+	Currency      string
+	Status        string
+	PaymentStatus string
+	ExpiresAt     *time.Time
+	BuyerName     string
+	BuyerEmail    string
 }
 
 // CheckoutDescriptor represents the checkout redirect/form descriptor returned to the client.
