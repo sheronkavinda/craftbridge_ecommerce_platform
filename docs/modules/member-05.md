@@ -204,29 +204,116 @@ Defined in `database/migrations/040_payments_refunds.up.sql` (and reversible in 
    PAYMENT_NOTIFY_URL=https://<your-ngrok-subdomain>.ngrok-free.app/api/v1/webhooks/payments/payhere
    ```
 
-### Simulating a Signed PayHere Webhook Locally with `curl`
+### Simulating a Signed PayHere Webhook Locally
 
-You do not need `ngrok` or a live PayHere account to test webhook verification locally. Compute `md5sig` using the exact formula:
+You do not need `ngrok` or a live PayHere account to test webhook verification locally.
 
-$$\text{md5sig} = \text{UPPER}\Big(\text{MD5}\big(\text{merchant\_id} + \text{order\_id} + \text{payhere\_amount} + \text{payhere\_currency} + \text{status\_code} + \text{UPPER}(\text{MD5}(\text{merchant\_secret}))\big)\Big)$$
+1. **Log in** with `POST /api/v1/auth/login` and use the returned `access_token` as the `Authorization: Bearer <token>` header.
+2. **Create the order and initiate payment**:
+   - Add an item to cart (`POST /api/v1/me/cart/items`), then check out (`POST /api/v1/checkout` with an `Idempotency-Key` header and `{"address_id": <id>}`) to get `<order_id>`.
+   - Initiate payment via `POST /api/v1/orders/<order_id>/payments`. The response returns `data.attempt_id` (e.g., `att-8881c4f13dbce139`) and `data.checkout.fields.amount` (e.g., `"32.00"`).
+3. **Compute `md5sig`**: the PayHere webhook `order_id` field is the payment **attempt** reference (`<attempt_id>`), **not** the CraftBridge order ID. Compute `md5sig` as:
 
-Example in PowerShell / Bash (assuming `PAYHERE_MERCHANT_ID=1211149`, `PAYHERE_MERCHANT_SECRET=test_secret`, `order_id=order-005`, `payhere_amount=97.00`, `payhere_currency=USD`, `status_code=2`):
+$$\text{md5sig} = \text{UPPER}\Big(\text{MD5}\big(\text{merchant\_id} + \text{attempt\_id} + \text{payhere\_amount} + \text{payhere\_currency} + \text{status\_code} + \text{UPPER}(\text{MD5}(\text{merchant\_secret}))\big)\Big)$$
+
+4. **Post the signed webhook** to `POST /api/v1/webhooks/payments/payhere` (`application/x-www-form-urlencoded`) with `merchant_id`, `order_id=<attempt_id>`, `payment_id`, `payhere_amount` (2 decimals, e.g., `"32.00"`), `payhere_currency`, `status_code=2`, and `md5sig`.
+5. **Verify the result**: `GET /api/v1/me/orders/<order_id>` shows `status: "processing"` and `payment_status: "paid"`, and `GET /api/v1/me/payments` shows `status: "SUCCESS"`.
+
+**PowerShell example:**
+
+```powershell
+# 1. Log in as the buyer
+$login = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/auth/login" `
+  -ContentType "application/json" `
+  -Body '{"email":"buyer@example.com","password":"Password123!"}'
+$headers = @{ Authorization = "Bearer $($login.access_token)" }
+
+# 2. Add to cart, checkout, and initiate payment
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/me/cart/items" `
+  -Headers $headers -ContentType "application/json" `
+  -Body '{"product_id":1,"quantity":1}' | Out-Null
+
+$checkoutHeaders = @{
+  Authorization     = "Bearer $($login.access_token)"
+  "Idempotency-Key" = "idem-checkout-001"
+}
+$orderResp = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/checkout" `
+  -Headers $checkoutHeaders -ContentType "application/json" `
+  -Body '{"address_id":1}'
+$orderId = $orderResp.id
+
+$payResp = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/orders/$orderId/payments" `
+  -Headers $headers -ContentType "application/json"
+$attemptId = $payResp.data.attempt_id
+$amount    = $payResp.data.checkout.fields.amount   # e.g. "32.00"
+$currency  = $payResp.data.checkout.fields.currency # "USD"
+
+# 3. Compute md5sig using attempt_id as PayHere's order_id
+function Get-UpperMd5([string]$text) {
+  $md5 = [System.Security.Cryptography.MD5]::Create()
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+  return ([System.BitConverter]::ToString($md5.ComputeHash($bytes)) -replace "-", "").ToUpperInvariant()
+}
+
+$merchantId     = "1211149"
+$merchantSecret = "test_secret"
+$statusCode     = "2"
+$secretHash     = Get-UpperMd5 $merchantSecret
+$md5Sig         = Get-UpperMd5 "$merchantId$attemptId$amount$currency$statusCode$secretHash"
+
+# 4. Post the signed webhook
+$webhookBody = @{
+  merchant_id      = $merchantId
+  order_id         = $attemptId
+  payment_id       = "PH-SANDBOX-9001"
+  payhere_amount   = $amount
+  payhere_currency = $currency
+  status_code      = $statusCode
+  md5sig           = $md5Sig
+}
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/webhooks/payments/payhere" `
+  -ContentType "application/x-www-form-urlencoded" `
+  -Body $webhookBody
+
+# 5. Verify order and payment status
+Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/v1/me/orders/$orderId" -Headers $headers
+Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/v1/me/payments" -Headers $headers
+```
+
+**Bash / `curl` example:**
 
 ```bash
-# 1. Set JWT to the access_token returned from POST /api/v1/auth/login
-JWT="<access-token>"
+# 1. Log in to obtain access_token
+JWT=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"buyer@example.com","password":"Password123!"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
 
-# 2. Initiate a payment attempt as the authenticated buyer
-curl -X POST http://localhost:8080/api/v1/orders/order-005/payments \
+# 2. Add to cart, checkout, and initiate payment
+curl -s -X POST http://localhost:8080/api/v1/me/cart/items \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":1,"quantity":1}' > /dev/null
+
+ORDER_ID=$(curl -s -X POST http://localhost:8080/api/v1/checkout \
+  -H "Authorization: Bearer $JWT" \
+  -H "Idempotency-Key: idem-checkout-001" \
+  -H "Content-Type: application/json" \
+  -d '{"address_id":1}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+
+# Save attempt_id (e.g. att-8881c4f13dbce139) and checkout.fields.amount (e.g. 32.00)
+curl -s -X POST "http://localhost:8080/api/v1/orders/$ORDER_ID/payments" \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json"
 
-# 3. Compute md5sig (example using python3 one-liner)
-MD5SIG=$(python3 -c '
-import hashlib
-m_id, o_id, amt, cur, code, secret = "1211149", "order-005", "97.00", "USD", "2", "test_secret"
+ATTEMPT_ID="<attempt_id>"
+AMOUNT="32.00"
+
+# 3. Compute md5sig (using attempt_id as PayHere's order_id)
+MD5SIG=$(ATTEMPT_ID="$ATTEMPT_ID" AMOUNT="$AMOUNT" python3 -c '
+import hashlib, os
+m_id, att_id, amt, cur, code, secret = "1211149", os.environ["ATTEMPT_ID"], os.environ["AMOUNT"], "USD", "2", "test_secret"
 sec_md5 = hashlib.md5(secret.encode()).hexdigest().upper()
-raw = f"{m_id}{o_id}{amt}{cur}{code}{sec_md5}"
+raw = f"{m_id}{att_id}{amt}{cur}{code}{sec_md5}"
 print(hashlib.md5(raw.encode()).hexdigest().upper())
 ')
 
@@ -234,54 +321,40 @@ print(hashlib.md5(raw.encode()).hexdigest().upper())
 curl -X POST http://localhost:8080/api/v1/webhooks/payments/payhere \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "merchant_id=1211149" \
-  --data-urlencode "order_id=order-005" \
+  --data-urlencode "order_id=$ATTEMPT_ID" \
   --data-urlencode "payment_id=PH-SANDBOX-9001" \
-  --data-urlencode "payhere_amount=97.00" \
+  --data-urlencode "payhere_amount=$AMOUNT" \
   --data-urlencode "payhere_currency=USD" \
   --data-urlencode "status_code=2" \
   --data-urlencode "md5sig=$MD5SIG"
+
+# 5. Verify order (status="processing", payment_status="paid") and payment (status="SUCCESS")
+curl -s -H "Authorization: Bearer $JWT" "http://localhost:8080/api/v1/me/orders/$ORDER_ID"
+curl -s -H "Authorization: Bearer $JWT" "http://localhost:8080/api/v1/me/payments"
 ```
 
 ---
 
-## 8. Local Demo Seed Data (Run Manually in Local DB)
+## 8. Local Demo Seed Data
 
-> **Note**: Per repository rules, local seed/test SQL files are excluded from Git and must not be committed under `database/`. Run the SQL block below manually against your local PostgreSQL database (`psql "$DB_URL"`) after running migrations to create a sample paid order (`order-005`) and a pending unpaid order (`order-006`) for buyer `buyer-003` and seller `seller-u3`:
+Demo data is created through the real application flow rather than manual SQL inserts:
 
-```sql
--- Local manual testing seed snippet for Member 05 (Payments, Refunds & Receipts)
--- Do NOT commit this to database/
+1. Register a seller account and submit a seller application.
+2. Approve the seller application as an admin at `/admin`.
+3. Add a published product with inventory and a `seller_shipping_rates` row for that shop.
+4. Register/use a buyer account and create a buyer shipping address, then follow the checkout and payment flow in Section 7.
 
--- 1. Paid order (order-005, $97.00 USD) owned by buyer-003 and sold by seller-u3
-INSERT INTO orders (id, user_id, seller_id, status, total_amount, currency, created_at, updated_at)
-VALUES ('order-005', 'buyer-003', 'seller-u3', 'PAID', 97.00, 'USD', NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO payment_attempts (
-    id, order_id, user_id, provider, provider_reference,
-    amount_cents, currency, status, created_at, updated_at, completed_at
-)
-VALUES (
-    'att-demo-005', 'order-005', 'buyer-003', 'payhere_sandbox', 'PH-DEMO-005',
-    9700, 'USD', 'SUCCESS', NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days'
-)
-ON CONFLICT (id) DO NOTHING;
-
--- 2. Unpaid order (order-006, $115.00 USD) ready for /payments/redirect/order-006
-INSERT INTO orders (id, user_id, seller_id, status, total_amount, currency, created_at, updated_at)
-VALUES ('order-006', 'buyer-003', 'seller-u3', 'PENDING', 115.00, 'USD', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour')
-ON CONFLICT (id) DO NOTHING;
-```
+> **Note**: Per repository rules, local seed/test SQL files must not be committed to the repository.
 
 ### Direct Frontend URLs for Local Testing (Task C)
 
 When running `npm start` (`http://localhost:4200`), navigate directly to any of the Member 05 routes below (the dev auth interceptor automatically attaches the appropriate buyer or seller headers):
 
-- **Buyer Payment Redirect**: `http://localhost:4200/payments/redirect/order-005` (or `/order-006`)
-- **Buyer Payment Status / Result**: `http://localhost:4200/payments/result?attemptId=att-demo-005&orderId=order-005`
+- **Buyer Payment Redirect**: `http://localhost:4200/payments/redirect/<order_id>`
+- **Buyer Payment Status / Result**: `http://localhost:4200/payments/result?attemptId=<attempt_id>&orderId=<order_id>`
 - **Buyer Payment History**: `http://localhost:4200/payments/history`
-- **Buyer Receipt View & Download**: `http://localhost:4200/payments/receipt/order-005`
-- **Buyer Returns & Refunds**: `http://localhost:4200/payments/refunds?orderId=order-005`
+- **Buyer Receipt View & Download**: `http://localhost:4200/payments/receipt/<order_id>`
+- **Buyer Returns & Refunds**: `http://localhost:4200/payments/refunds?orderId=<order_id>`
 - **Seller Earnings & Payout History**: `http://localhost:4200/payments/seller-earnings`
 
 ---
